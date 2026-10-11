@@ -1141,7 +1141,7 @@ fn font_picker(
                             picker.cancel();
                         }
                     };
-                    choose(ui, DEFAULT_FAMILY, "JetBrains Mono (Default)");
+                    choose(ui, DEFAULT_FAMILY, "JetBrains Mono (Bundled)");
                     if let Some(families) = fonts.families() {
                         for family in families {
                             choose(ui, family, family);

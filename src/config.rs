@@ -161,7 +161,7 @@ impl Default for Config {
             favorite_themes: Vec::new(),
             accent: Accent::Blue,
             window_zoom: 1.0,
-            font_family: "JetBrains Mono".into(),
+            font_family: "Noto Sans Mono".into(),
             font_size: 14.0,
             line_height: 1.4,
             scrollback: 10_000,
@@ -601,7 +601,7 @@ mod tests {
     #[test]
     fn font_family_defaults_for_old_settings_and_roundtrips_unavailable_choices() {
         let legacy: Config = toml::from_str("font_size = 15.0").unwrap();
-        assert_eq!(legacy.font_family, "JetBrains Mono");
+        assert_eq!(legacy.font_family, "Noto Sans Mono");
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("config.toml");
         let config = Config {

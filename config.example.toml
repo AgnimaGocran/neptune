@@ -30,7 +30,7 @@ window_zoom = 1.0
 # NF/NFM abbreviations resolve to installed Nerd Font/Nerd Font Mono families.
 # Missing or unreadable families use bundled JetBrains Mono and keep this choice.
 # Restart Neptune after installing a font. Only terminal text uses this family.
-font_family = "JetBrains Mono"
+font_family = "Noto Sans Mono"
 
 # Saved terminal text size: 9–32; adjust in Preferences or with Ctrl+Shift+Plus/Minus.
 # Ctrl+Shift+0 resets terminal text size to the default (14).
