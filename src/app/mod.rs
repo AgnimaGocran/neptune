@@ -100,6 +100,8 @@ pub struct App {
     command_target: Option<(PaneId, u64)>,
     browser_launch: Option<String>,
     screenshot: Option<PathBuf>,
+    /// Folders handed over by later single-instance launches.
+    forwarded: Option<mpsc::Receiver<PathBuf>>,
     capture_sent: bool,
     exit_approved: bool,
     pending_close: Option<closing::PendingClose>,
@@ -252,6 +254,7 @@ impl App {
             command_target: None,
             browser_launch: launch.browser,
             screenshot: launch.screenshot,
+            forwarded: launch.forwarded,
             capture_sent: false,
             exit_approved: false,
             pending_close: None,
@@ -308,6 +311,15 @@ impl App {
     fn poll(&mut self, ctx: &egui::Context) {
         let local_window = self.viewport_of(self.presentation_window()) == ctx.viewport_id()
             && (ctx.viewport_id() != egui::ViewportId::ROOT || self.host_exists());
+        if ctx.viewport_id() == egui::ViewportId::ROOT {
+            while let Some(folder) = self.forwarded.as_mut().and_then(|r| r.try_recv().ok()) {
+                self.action(ctx, Action::Create(folder, None));
+                let host = self.viewport_of(self.host_window());
+                ctx.send_viewport_cmd_to(host, egui::ViewportCommand::Visible(true));
+                ctx.send_viewport_cmd_to(host, egui::ViewportCommand::Minimized(false));
+                ctx.send_viewport_cmd_to(host, egui::ViewportCommand::Focus);
+            }
+        }
         let shown = self.visible_panes(ctx);
         let focused = self.focused_pane(ctx);
         for completion in self.browsers.poll(ctx, &shown, focused) {

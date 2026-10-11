@@ -97,6 +97,46 @@ fn main() -> anyhow::Result<()> {
     if let Some(cwd) = &launch.cwd {
         anyhow::ensure!(cwd.is_dir(), "Directory does not exist: {}", cwd.display());
     }
+    // A second launch with a folder to open (the file manager starts Neptune
+    // in the opened directory) hands it to the running instance instead of
+    // opening another window.
+    #[cfg(unix)]
+    let parked_context = {
+        use parking_lot::Mutex;
+        use std::sync::Arc;
+        let parked: Arc<Mutex<Option<eframe::egui::Context>>> = Arc::new(Mutex::new(None));
+        let data_root = launch
+            .data_root
+            .clone()
+            .unwrap_or_else(config::data_dir);
+        let forwardable = launch.ssh.is_none()
+            && launch.command.is_none()
+            && launch.browser.is_none()
+            && launch.screenshot.is_none();
+        if forwardable {
+            let folder = launch.cwd.clone().or_else(|| {
+                let cwd = std::env::current_dir().ok()?;
+                let home = directories::BaseDirs::new()?.home_dir().to_path_buf();
+                (cwd != home).then_some(cwd)
+            });
+            if let Some(folder) = folder
+                && neptune_terminal::runtime::single_instance::forward(&folder, &data_root)
+            {
+                return Ok(());
+            }
+        }
+        // Ephemeral screenshot runs never serve later launches.
+        if launch.screenshot.is_none() {
+            let wake = parked.clone();
+            launch.forwarded =
+                neptune_terminal::runtime::single_instance::listen(&data_root, Arc::new(move || {
+                    if let Some(ctx) = &*wake.lock() {
+                        ctx.request_repaint();
+                    }
+                }));
+        }
+        Some(parked)
+    };
     // A command is typed into the first terminal shortly after it starts. Over
     // SSH that could be a password or host-key prompt rather than a shell.
     anyhow::ensure!(
@@ -148,7 +188,13 @@ fn main() -> anyhow::Result<()> {
     eframe::run_native(
         "Neptune",
         native_options(&window.state, native_icon()?),
-        Box::new(move |cc| Ok(Box::new(app::App::new(cc, launch, window)))),
+        Box::new(move |cc| {
+            #[cfg(unix)]
+            if let Some(parked) = &parked_context {
+                *parked.lock() = Some(cc.egui_ctx.clone());
+            }
+            Ok(Box::new(app::App::new(cc, launch, window)))
+        }),
     )
     .map_err(|e| anyhow::anyhow!("Cannot start native renderer: {e}"))
 }

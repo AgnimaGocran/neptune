@@ -35,4 +35,6 @@ pub struct Launch {
     pub diagnostics: bool,
     /// The storage options of this run, repeated when an update restarts it.
     pub relaunch_arguments: Vec<std::ffi::OsString>,
+    /// Folders opened by later launches of the same storage root.
+    pub forwarded: Option<std::sync::mpsc::Receiver<std::path::PathBuf>>,
 }

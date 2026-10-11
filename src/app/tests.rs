@@ -40,6 +40,7 @@ pub(super) fn fixture(root: &std::path::Path) -> (App, mpsc::SyncSender<Startup>
         command: Some("printf startup".into()),
         command_target: None,
         screenshot: None,
+        forwarded: None,
         capture_sent: false,
         exit_approved: false,
         pending_close: None,

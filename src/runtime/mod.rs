@@ -5,6 +5,8 @@ pub mod agents;
 pub(crate) mod browser;
 pub mod persistence;
 pub(crate) mod ports;
+#[cfg(unix)]
+pub mod single_instance;
 pub mod project_lead;
 pub mod project_store;
 pub mod pull_request;
