@@ -307,10 +307,10 @@ impl SidebarSlide {
     }
 }
 
-/// Centre of the sidebar toggle from the window's leading edge: beside the
-/// window controls while the sidebar is hidden, at its trailing edge while shown.
+/// Centre of the sidebar toggle from the window's leading edge: at the leading
+/// margin while the sidebar is hidden, at its trailing edge while shown.
 fn toggle_offset(view: &ChromeView) -> f32 {
-    egui::lerp(94.0..=view.sidebar_width - 22.0, view.sidebar)
+    egui::lerp(22.0..=view.sidebar_width - 22.0, view.sidebar)
 }
 
 fn drag_region(ui: &mut Ui, rect: Rect, name: &str) {
@@ -328,8 +328,9 @@ fn toggle_maximized(ctx: &egui::Context) {
     window::send(ctx, WindowOperation::SetMaximized(!maximized));
 }
 
-/// Close, minimize and maximize as three quiet lights. Their glyphs appear when
-/// the pointer approaches, and they fade to neutral in an inactive window.
+/// Minimize, maximize and close as three quiet lights at the window's trailing
+/// edge, close outermost. Their glyphs appear when the pointer approaches, and
+/// they fade to neutral in an inactive window.
 pub fn window_controls(ui: &mut Ui, left_center: Pos2, p: Palette, actions: &mut Vec<Action>) {
     let group = Rect::from_min_max(
         left_center + vec2(-6.0, -12.0),
@@ -339,9 +340,9 @@ pub fn window_controls(ui: &mut Ui, left_center: Pos2, p: Palette, actions: &mut
     let active = ui.input(|input| input.focused);
     let reveal = animate(ui.ctx(), ui.id().with("window-controls"), hovered, 0.12);
     for (index, (label, rgb)) in [
-        ("Close window", 0xff5f57),
         ("Minimize", 0xfebc2e),
         ("Maximize", 0x28c840),
+        ("Close window", 0xff5f57),
     ]
     .into_iter()
     .enumerate()
@@ -380,6 +381,13 @@ pub fn window_controls(ui: &mut Ui, left_center: Pos2, p: Palette, actions: &mut
             );
             match index {
                 0 => {
+                    painter.line_segment([center - vec2(3.0, 0.0), center + vec2(3.0, 0.0)], ink);
+                }
+                1 => {
+                    painter.line_segment([center - vec2(3.0, 0.0), center + vec2(3.0, 0.0)], ink);
+                    painter.line_segment([center - vec2(0.0, 3.0), center + vec2(0.0, 3.0)], ink);
+                }
+                _ => {
                     for flip in [1.0, -1.0] {
                         painter.line_segment(
                             [
@@ -390,20 +398,13 @@ pub fn window_controls(ui: &mut Ui, left_center: Pos2, p: Palette, actions: &mut
                         );
                     }
                 }
-                1 => {
-                    painter.line_segment([center - vec2(3.0, 0.0), center + vec2(3.0, 0.0)], ink);
-                }
-                _ => {
-                    painter.line_segment([center - vec2(3.0, 0.0), center + vec2(3.0, 0.0)], ink);
-                    painter.line_segment([center - vec2(0.0, 3.0), center + vec2(0.0, 3.0)], ink);
-                }
             }
         }
         if response.clicked() {
             match index {
-                0 => actions.push(Action::WindowClose),
-                1 => window::send(ui.ctx(), WindowOperation::Minimize),
-                _ => toggle_maximized(ui.ctx()),
+                0 => window::send(ui.ctx(), WindowOperation::Minimize),
+                1 => toggle_maximized(ui.ctx()),
+                _ => actions.push(Action::WindowClose),
             }
         }
         response.on_hover_text(label);
@@ -437,12 +438,12 @@ pub fn toolbar(
 ) {
     drag_region(ui, rect, "title-drag");
     let middle = rect.center().y;
-    // The title starts clear of the leading controls wherever they overlap the
-    // toolbar: always while the sidebar is hidden, and in passing as it slides.
+    // The title starts clear of the sidebar toggle: at the leading margin
+    // while the sidebar is hidden, and at its trailing edge while it shows.
     let leading = if view.sidebar_available {
         toggle_offset(view) + 24.0
     } else {
-        78.0
+        16.0
     };
     let left = (rect.left() + 8.0).max(view.window.left() + leading);
 
@@ -459,7 +460,9 @@ pub fn toolbar(
     let show_field = settled_width >= 760.0;
     let field = Rect::from_center_size(rect.center(), vec2(field_width, 28.0));
 
-    let mut right = rect.right() - 8.0;
+    // The window controls hold the trailing 74 of the window; the cluster ends
+    // clear of them.
+    let mut right = rect.right() - 80.0;
     // "New workspace" moves here while the sidebar is away. It fades in from
     // the trailing edge so its neighbours make room gradually.
     let cluster = ui
@@ -2091,12 +2094,14 @@ fn workspace_list(
 }
 
 /// The window controls and the sidebar toggle, drawn over the sidebar and the
-/// toolbar. The lights never move; the toggle travels with the sidebar's edge
-/// between its place there and its place beside the lights.
+/// toolbar. The lights sit at the window's trailing edge; the toggle travels
+/// with the sidebar's edge between its place there and the leading margin.
 pub fn leading_controls(ui: &mut Ui, p: Palette, view: &ChromeView, actions: &mut Vec<Action>) {
     let origin = view.window.min;
     let middle = origin.y + metrics::TOOLBAR_HEIGHT * 0.5;
-    window_controls(ui, Pos2::new(origin.x + 16.0, middle), p, actions);
+    // The lights' group spans 64 and ends 10 from the trailing edge, as it
+    // began 10 from the leading edge before it moved there.
+    window_controls(ui, Pos2::new(view.window.max.x - 68.0, middle), p, actions);
     if view.sidebar_available
         && icon_at(
             ui,
