@@ -32,13 +32,15 @@ def library_package(path):
 def bundle_libraries(appdir):
     library_dir = appdir / "usr/lib"
     library_dir.mkdir(exist_ok=True)
-    # Platform/graphics drivers and glibc belong to the host, with the GBM and
-    # Wayland libraries those drivers link: a newer Mesa does not load against
-    # older copies. Bundle the other window libraries winit loads at runtime as
-    # well as linked transitive dependencies.
-    exclude = re.compile(r"^(ld-linux|lib(c|m|dl|rt|pthread|resolv|nss_[^.]+)\.so|lib(GL|EGL|GLX|GLdispatch|vulkan|drm|gbm|wayland-[a-z]+))")
+    # Platform/graphics drivers and glibc belong to the host, with the GBM,
+    # Wayland and xkbcommon libraries those drivers and the keymap load: a
+    # newer Mesa does not load against older Wayland copies, and an older
+    # xkbcommon cannot read a newer system's keyboard layouts. Bundle the other
+    # window libraries winit loads at runtime as well as linked transitive
+    # dependencies.
+    exclude = re.compile(r"^(ld-linux|lib(c|m|dl|rt|pthread|resolv|nss_[^.]+)\.so|lib(GL|EGL|GLX|GLdispatch|vulkan|drm|gbm|xkbcommon[a-z0-9-]*|wayland-[a-z]+))")
     ldconfig = subprocess.check_output(["/sbin/ldconfig", "-p"], text=True)
-    names = ("libxkbcommon.so.0", "libxkbcommon-x11.so.0", "libX11.so.6", "libXcursor.so.1", "libXi.so.6", "libXrandr.so.2", "libXinerama.so.1")
+    names = ("libX11.so.6", "libXcursor.so.1", "libXi.so.6", "libXrandr.so.2", "libXinerama.so.1")
     browser = appdir / "usr/lib/neptune/browser"
     queue = [appdir / "usr/bin/neptune", browser / "neptune-browser", browser / "libcef.so"]
     for name in names:
@@ -128,7 +130,9 @@ def main():
     shutil.copy2(ROOT / "assets/icons/neptune-256.png", stage / "neptune.png")
     (stage / ".DirIcon").symlink_to("neptune.png")
     apprun = stage / "AppRun"
-    apprun.write_text('#!/bin/sh\nAPPDIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"\nexport LD_LIBRARY_PATH="$APPDIR/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"\nexec "$APPDIR/usr/bin/neptune" "$@"\n')
+    # readlink -f resolves a symlink to AppRun, so an extracted AppDir can be
+    # launched through one; the AppImage runtime hands over its mount path.
+    apprun.write_text('#!/bin/sh\nAPPDIR="$(CDPATH= cd -- "$(dirname -- "$(readlink -f -- "$0")")" && pwd)"\nexport LD_LIBRARY_PATH="$APPDIR/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"\nexec "$APPDIR/usr/bin/neptune" "$@"\n')
     apprun.chmod(0o755)
     bundle_libraries(stage)
     # AppImage type2 runtime is MIT; include its pinned license with the payload.
