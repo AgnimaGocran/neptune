@@ -21,14 +21,16 @@ pub enum Provider {
     Codex,
     Claude,
     Cursor,
+    Omp,
 }
 impl Provider {
-    pub const ALL: [Self; 3] = [Self::Codex, Self::Claude, Self::Cursor];
+    pub const ALL: [Self; 4] = [Self::Codex, Self::Claude, Self::Cursor, Self::Omp];
     pub fn name(self) -> &'static str {
         match self {
             Self::Codex => "Codex",
             Self::Claude => "Claude Code",
             Self::Cursor => "Cursor",
+            Self::Omp => "OMP",
         }
     }
 }
@@ -57,6 +59,7 @@ impl Unavailable {
                 Provider::Codex => "Sign in with codex login, then refresh.",
                 Provider::Claude => "Sign in with claude auth login, then refresh.",
                 Provider::Cursor => "Sign in with agent login, then refresh.",
+                Provider::Omp => "Sign in with omp, then refresh.",
             },
             Self::Unsupported => "This login or CLI does not report subscription limits.",
             Self::Failed => "Could not read usage. Try refreshing.",
@@ -111,7 +114,7 @@ impl Reading {
 }
 
 pub struct Usage {
-    pub readings: [Reading; 3],
+    pub readings: [Reading; Provider::ALL.len()],
     pub refreshing: bool,
     requests: Option<mpsc::SyncSender<bool>>,
     replies: Option<mpsc::Receiver<Reply>>,

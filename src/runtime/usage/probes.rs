@@ -27,6 +27,9 @@ pub(super) fn read(
     keychain: bool,
     stop: &AtomicBool,
 ) -> Result<(Vec<Window>, Option<String>)> {
+    if provider == Provider::Omp {
+        return omp(stop);
+    }
     if provider == Provider::Cursor {
         return cursor(keychain, stop).map(|windows| (windows, None));
     }
@@ -109,7 +112,13 @@ impl Probe {
             use std::os::windows::process::CommandExt;
             command.creation_flags(0x0800_0000);
         }
-        let child = command.spawn().map_err(|_| Unavailable::Failed)?;
+        let child = command.spawn().map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                Unavailable::NotInstalled
+            } else {
+                Unavailable::Failed
+            }
+        })?;
         let (send, receive) = mpsc::sync_channel(4);
         let mut probe = Self {
             child,
@@ -394,6 +403,73 @@ fn available(windows: Vec<Window>) -> Result<Vec<Window>> {
     }
 }
 
+/// OMP aggregates every account its providers authenticate behind one CLI:
+/// `omp usage --json` reports each provider's allowances with their windows.
+fn omp(stop: &AtomicBool) -> Result<(Vec<Window>, Option<String>)> {
+    let mut command = Command::new("omp");
+    command.arg("usage").arg("--json");
+    // Account probes have no project directory, prompt, tools or saved session.
+    if let Some(home) = directories::BaseDirs::new() {
+        command.current_dir(home.home_dir());
+    }
+    let mut probe = Probe::spawn(&mut command)?;
+    let deadline = Instant::now() + TIMEOUT;
+    let mut buffer = Vec::new();
+    let mut offset = 0;
+    while probe.bytes(&mut offset, &mut buffer)? {
+        if stop.load(Ordering::Acquire) || Instant::now() >= deadline {
+            return Err(Unavailable::Failed);
+        }
+    }
+    let value: Value = serde_json::from_slice(&buffer).map_err(|_| Unavailable::Failed)?;
+    Ok((omp_windows(&value)?, None))
+}
+
+/// One report per provider; each limit is an allowance of its own window.
+/// Used fractions become percentages and reset stamps arrive in milliseconds.
+fn omp_windows(value: &Value) -> Result<Vec<Window>> {
+    let reports = value["reports"].as_array().ok_or(Unavailable::Failed)?;
+    let named = reports.len() > 1;
+    let mut windows = Vec::new();
+    for report in reports {
+        let provider = report["provider"].as_str().unwrap_or_default();
+        let Some(limits) = report["limits"].as_array() else {
+            continue;
+        };
+        for limit in limits {
+            if windows.len() >= MAX_WINDOWS {
+                break;
+            }
+            let Some(used_percent) = limit["amount"]["usedFraction"]
+                .as_f64()
+                .filter(|fraction| fraction.is_finite())
+                .map(|fraction| fraction.clamp(0.0, 1.0) * 100.0)
+            else {
+                continue;
+            };
+            let window_label = limit["window"]["label"].as_str().unwrap_or("Allowance");
+            let label = limit["label"]
+                .as_str()
+                .filter(|label| !label.trim().is_empty())
+                .unwrap_or(window_label);
+            let label = if named && !provider.is_empty() {
+                format!("{provider} · {label}")
+            } else {
+                label.to_owned()
+            };
+            windows.push(Window {
+                label: label.chars().take(48).collect(),
+                used_percent,
+                resets_at: limit["window"]["resetsAt"]
+                    .as_u64()
+                    .filter(|stamp| *stamp > 0)
+                    .map(|stamp| stamp / 1000),
+            });
+        }
+    }
+    available(windows)
+}
+
 #[derive(Default)]
 struct CursorLogin {
     token: Option<String>,
@@ -588,6 +664,66 @@ fn cursor_windows(body: &Value) -> Result<Vec<Window>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn omp_reports_become_windows_with_percent_and_reset() {
+        let value = json!({
+            "generatedAt": 1791720373626u64,
+            "reports": [
+                {"provider": "zai", "fetchedAt": 1791720073448u64, "limits": [
+                    {"id": "zai:tokens:5h", "label": "ZAI 5 Hours Token Quota",
+                     "window": {"id": "5h", "label": "5 Hours", "durationMs": 18000000u64, "resetsAt": 1791723439174u64},
+                     "amount": {"usedFraction": 0.69, "remainingFraction": 0.31, "unit": "tokens"},
+                     "status": "ok"},
+                    {"id": "zai:features:zread:1mo", "label": "ZAI Zread Quota",
+                     "window": {"id": "1mo", "label": "Monthly", "durationMs": 2592000000u64, "resetsAt": 1793984892999u64},
+                     "amount": {"usedFraction": 0.0, "remainingFraction": 1.0, "unit": "requests"},
+                     "status": "ok"}
+                ]},
+                {"provider": "anthropic", "fetchedAt": 1791720073448u64, "limits": [
+                    {"id": "anthropic:5h", "label": "Anthropic Session",
+                     "window": {"id": "5h", "label": "5 Hours", "resetsAt": 1791726000000u64},
+                     "amount": {"usedFraction": 1.0}, "status": "exhausted"}
+                ]}
+            ]
+        });
+        let windows = omp_windows(&value).unwrap();
+        assert_eq!(windows.len(), 3);
+        assert_eq!(windows[0].label, "zai · ZAI 5 Hours Token Quota");
+        assert!((windows[0].used_percent - 69.0).abs() < 1e-9);
+        assert_eq!(windows[0].resets_at, Some(1791723439));
+        assert_eq!(windows[2].label, "anthropic · Anthropic Session");
+        assert_eq!(windows[2].used_percent, 100.0);
+    }
+    #[test]
+    fn a_single_omp_report_names_its_windows_directly() {
+        let value = json!({
+            "reports": [
+                {"provider": "zai", "limits": [
+                    {"label": "ZAI 5 Hours Token Quota",
+                     "window": {"label": "5 Hours", "resetsAt": 1791723439174u64},
+                     "amount": {"usedFraction": 0.25}}
+                ]}
+            ]
+        });
+        let windows = omp_windows(&value).unwrap();
+        assert_eq!(windows.len(), 1);
+        assert_eq!(windows[0].label, "ZAI 5 Hours Token Quota");
+        assert_eq!(windows[0].resets_at, Some(1791723439));
+    }
+    #[test]
+    fn omp_without_usable_reports_or_fractions_reports_unsupported() {
+        assert_eq!(
+            omp_windows(&json!({"reports": []})),
+            Err(Unavailable::Unsupported)
+        );
+        assert_eq!(
+            omp_windows(&json!({"reports": [
+                {"provider": "zai", "limits": [{"label": "Quota", "amount": {}}]}
+            ]})),
+            Err(Unavailable::Unsupported)
+        );
+        assert_eq!(omp_windows(&json!({})), Err(Unavailable::Failed));
+    }
     #[test]
     fn codex_plan_uses_readable_names_from_the_main_usage_bucket() {
         for (raw, label) in [

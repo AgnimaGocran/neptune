@@ -1684,6 +1684,7 @@ fn capture_usage_native() {
                         Provider::Codex => "Plus",
                         Provider::Claude => "Max",
                         Provider::Cursor => "Pro",
+                        Provider::Omp => "Team",
                     }
                     .into(),
                 );
@@ -1691,6 +1692,7 @@ fn capture_usage_native() {
                     Provider::Codex => (24.0, 61.0),
                     Provider::Claude => (83.0, 36.0),
                     Provider::Cursor => (42.0, 18.0),
+                    Provider::Omp => (55.0, 12.0),
                 };
                 reading.windows = vec![
                     Window {
