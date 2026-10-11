@@ -1,0 +1,20 @@
+# Konvoy manifest: `konvoy build .` builds and packs the Linux AppImage.
+# Terminal-only AppImage for now: the CEF browser payload, license manifest
+# and DEB still come from scripts/package-linux.sh until konvoy grows
+# payload support (see the konvoy gap list).
+name = "neptune"
+version = "0.1.0-rc.5"
+
+[dev]
+command = "cargo build -p neptune-terminal"
+
+[build.linux]
+command = "cargo build -p neptune-terminal --release --locked --bin neptune"
+
+[pack.linux.appimage]
+dist = "dist/linux_x86_64"
+main = "Neptune-linux-x64.AppImage"
+binary = "target/release/neptune"
+desktop_file = "packaging/neptune.desktop"
+icon = "assets/icons/neptune-256.png"
+bin = "neptune"
