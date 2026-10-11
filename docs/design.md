@@ -606,7 +606,8 @@ Interface text is Geist in three weights: regular for body and values, medium
 for names, labels and buttons, semibold for sheet titles and tiles. Sizes are
 13 for body and names, 12–12.5 for secondary and control text, 11–11.5 for
 section labels and paths, and 15 for sheet titles and the palette field.
-Terminal text defaults to bundled JetBrains Mono; Preferences → Text selects an
+Terminal text defaults to the installed Noto Sans Mono, falling back to the
+bundled JetBrains Mono; Preferences → Text selects an
 installed monospace family for every terminal. Preferences or Ctrl+Shift+Plus/Minus
 (Command+Shift on macOS) changes its size; Ctrl+Shift+0 (Command+Shift+0 on
 macOS) resets it to the default. App zoom

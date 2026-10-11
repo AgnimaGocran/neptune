@@ -45,6 +45,19 @@ their preparation records remain in Git history.
   such as Ubuntu 26.04, Fedora 44 and Arch, where it reported that it could
   not start its renderer. It uses the system's Wayland libraries, which those
   drivers require.
+- The Linux AppImage also leaves libxkbcommon to the system, as it does its
+  Wayland libraries: a current desktop's keyboard layouts need a current
+  xkbcommon, and the bundled copy could not read them. An AppRun that is
+  launched through a symlink now resolves to its real location.
+- Terminal text defaults to the installed Noto Sans Mono, falling back to the
+  bundled JetBrains Mono where it is unavailable. Preferences → Text still
+  selects any installed monospace family.
+- The usage footer reads OMP's `omp usage` beside Codex, Claude Code and
+  Cursor: one line for every allowance of every provider OMP has signed in,
+  with the same refresh controls.
+- Window controls sit at the window's top-right corner, read minimize,
+  maximize, close with close in the outer corner, and the sidebar toggle
+  rests at the top-left while the sidebar is hidden.
 
 ## [0.1.0-rc.5] - 2026-10-10
 
