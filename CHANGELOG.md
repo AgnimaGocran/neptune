@@ -58,6 +58,8 @@ their preparation records remain in Git history.
 - Window controls sit at the window's top-right corner, read minimize,
   maximize, close with close in the outer corner, and the sidebar toggle
   rests at the top-left while the sidebar is hidden.
+- Workspaces are chosen with Ctrl+F1–F9 (Command+F1–F9 on macOS) instead of
+  Ctrl+Shift+1–9, whose digits followed the keyboard layout.
 
 ### Fixes
 

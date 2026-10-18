@@ -2100,7 +2100,7 @@ fn new_workspace_shortcut_works_with_no_existing_workspace() {
 }
 
 #[test]
-fn command_digits_select_workspaces_by_position_even_when_shift_changes_the_symbol() {
+fn primary_f_keys_select_workspaces_by_position() {
     let root = tempfile::tempdir().unwrap();
     let (mut app, _sender) = fixture(root.path());
     let ctx = egui::Context::default();
@@ -2123,28 +2123,23 @@ fn command_digits_select_workspaces_by_position_even_when_shift_changes_the_symb
         .map(|workspace| workspace.id())
         .collect();
     assert_eq!(app.controller.model().active_workspace(), Some(ids[2]));
-    let command = if cfg!(target_os = "macos") {
+    let primary = if cfg!(target_os = "macos") {
         egui::Modifiers::MAC_CMD | egui::Modifiers::COMMAND
     } else {
-        egui::Modifiers::CTRL | egui::Modifiers::SHIFT
+        egui::Modifiers::CTRL
     };
-    // On a US layout Shift+1 arrives as "!" with the digit as its physical key.
-    assert!(press(
-        &mut app,
-        &ctx,
-        key(egui::Key::Exclamationmark, Some(egui::Key::Num1), command)
-    ));
+    assert!(press(&mut app, &ctx, key(egui::Key::F1, None, primary)));
     assert_eq!(app.controller.model().active_workspace(), Some(ids[0]));
-    assert!(press(&mut app, &ctx, key(egui::Key::Num2, None, command)));
+    assert!(press(&mut app, &ctx, key(egui::Key::F2, None, primary)));
     assert_eq!(app.controller.model().active_workspace(), Some(ids[1]));
     // No ninth workspace: the key is left for the terminal and nothing changes.
-    assert!(!press(&mut app, &ctx, key(egui::Key::Num9, None, command)));
+    assert!(!press(&mut app, &ctx, key(egui::Key::F9, None, primary)));
     assert_eq!(app.controller.model().active_workspace(), Some(ids[1]));
-    // A plain digit is ordinary typing.
+    // A plain F-key is ordinary typing.
     assert!(!press(
         &mut app,
         &ctx,
-        key(egui::Key::Num1, None, egui::Modifiers::NONE)
+        key(egui::Key::F1, None, egui::Modifiers::NONE)
     ));
     assert_eq!(app.controller.model().active_workspace(), Some(ids[1]));
 }
@@ -2252,9 +2247,9 @@ fn moving_a_workspace_keeps_focus_and_renumbers_the_position_shortcuts() {
     let command = if cfg!(target_os = "macos") {
         egui::Modifiers::MAC_CMD | egui::Modifiers::COMMAND
     } else {
-        egui::Modifiers::CTRL | egui::Modifiers::SHIFT
+        egui::Modifiers::CTRL
     };
-    assert!(press(&mut app, &ctx, key(egui::Key::Num2, None, command)));
+    assert!(press(&mut app, &ctx, key(egui::Key::F2, None, command)));
     let active = app.controller.model().active_workspace().unwrap();
     assert_eq!(
         app.controller.model().workspace(active).unwrap().name(),

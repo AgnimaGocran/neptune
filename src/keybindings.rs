@@ -263,15 +263,15 @@ impl BindingAction {
             Self::ShowAgents => const { &[] },
             Self::ShowProject => const { &[] },
             Self::BrowseThemes => const { &[] },
-            Self::Workspace1 => const { &[host(Key::Num1)] },
-            Self::Workspace2 => const { &[host(Key::Num2)] },
-            Self::Workspace3 => const { &[host(Key::Num3)] },
-            Self::Workspace4 => const { &[host(Key::Num4)] },
-            Self::Workspace5 => const { &[host(Key::Num5)] },
-            Self::Workspace6 => const { &[host(Key::Num6)] },
-            Self::Workspace7 => const { &[host(Key::Num7)] },
-            Self::Workspace8 => const { &[host(Key::Num8)] },
-            Self::Workspace9 => const { &[host(Key::Num9)] },
+            Self::Workspace1 => const { &[chord(Key::F1, CTRL), chord(Key::F1, CMD)] },
+            Self::Workspace2 => const { &[chord(Key::F2, CTRL), chord(Key::F2, CMD)] },
+            Self::Workspace3 => const { &[chord(Key::F3, CTRL), chord(Key::F3, CMD)] },
+            Self::Workspace4 => const { &[chord(Key::F4, CTRL), chord(Key::F4, CMD)] },
+            Self::Workspace5 => const { &[chord(Key::F5, CTRL), chord(Key::F5, CMD)] },
+            Self::Workspace6 => const { &[chord(Key::F6, CTRL), chord(Key::F6, CMD)] },
+            Self::Workspace7 => const { &[chord(Key::F7, CTRL), chord(Key::F7, CMD)] },
+            Self::Workspace8 => const { &[chord(Key::F8, CTRL), chord(Key::F8, CMD)] },
+            Self::Workspace9 => const { &[chord(Key::F9, CTRL), chord(Key::F9, CMD)] },
         }
     }
     pub fn workspace(index: usize) -> Option<Self> {
@@ -700,7 +700,7 @@ mod tests {
             [keybindings]
             split-right = ["alt+h", "ctrl+shift+F10"]
             split-below = []
-            increase-font-size = ["primary+F8"]
+            increase-font-size = ["primary+F10"]
         "#,
         )
         .unwrap();
