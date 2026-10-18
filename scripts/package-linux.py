@@ -26,6 +26,10 @@ def library_package(path):
         result = subprocess.run(["dpkg-query", "-S", str(candidate)], capture_output=True, text=True)
         if result.returncode == 0:
             return result.stdout.split(": ", 1)[0].split(":", 1)[0]
+        # A pacman host records the owning package under its own name.
+        result = subprocess.run(["pacman", "-Qoq", str(candidate)], capture_output=True, text=True)
+        if result.returncode == 0:
+            return result.stdout.strip()
     raise ValueError(f"No installed package owns bundled library {path}")
 
 
@@ -74,10 +78,18 @@ def bundle_libraries(appdir):
         if path.name != "neptune" and not path.is_relative_to(browser):
             shutil.copy2(path.resolve(), library_dir / path.name)
             owner = library_package(path)
-            copyright_file = Path("/usr/share/doc") / owner / "copyright"
-            if not copyright_file.is_file():
-                raise ValueError(f"Missing bundled library notice for {owner}")
-            shutil.copy2(copyright_file, copyrights / f"{owner}.copyright")
+            debian = Path("/usr/share/doc") / owner / "copyright"
+            if debian.is_file():
+                shutil.copy2(debian, copyrights / f"{owner}.copyright")
+            else:
+                # pacman keeps each package's licenses in their own directory.
+                licenses = sorted((Path("/usr/share/licenses") / owner).glob("*"))
+                if not licenses:
+                    raise ValueError(f"Missing bundled library notice for {owner}")
+                directory = copyrights / f"{owner}.licenses"
+                directory.mkdir()
+                for license in licenses:
+                    shutil.copy2(license, directory / license.name)
         dependencies = subprocess.check_output(["ldd", str(path)], text=True)
         if "not found" in dependencies:
             raise ValueError(f"Unresolved dependency in {path.name}")
@@ -92,6 +104,7 @@ def main():
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--appimagetool", type=Path, required=True)
     parser.add_argument("--runtime", type=Path, required=True)
+    parser.add_argument("--skip-deb", action="store_true", help="Build the AppImage only, for hosts without dpkg-deb")
     args = parser.parse_args()
     match, prerelease = version_info(args.version)
     names = artifact_names(args.version)
@@ -113,19 +126,20 @@ def main():
         icon.parent.mkdir(parents=True)
         shutil.copy2(ROOT / f"assets/icons/neptune-{size}.png", icon)
     common.notices(stage / "usr/share/doc/neptune")
-    control = stage / "DEBIAN"
-    control.mkdir()
-    # Debian sorts ~ prereleases below the stable version; SemVer build metadata
-    # is represented as a Debian revision without changing executable version.
-    deb_version = ".".join(match[i] for i in (1, 2, 3))
-    if prerelease:
-        deb_version += "~" + match[4]
-    if match[5]:
-        deb_version += "+" + match[5]
-    (control / "control").write_text(f"Package: neptune\nVersion: {deb_version}\nSection: utils\nPriority: optional\nArchitecture: amd64\nMaintainer: Neptune maintainers <maintainers@neptune.rs>\nHomepage: https://neptune.rs\nInstalled-Size: {sum(p.stat().st_size for p in stage.rglob('*') if p.is_file()) // 1024}\nDepends: libc6 (>= 2.35), libgcc-s1, libstdc++6, libxkbcommon0, libxkbcommon-x11-0, libwayland-client0, libwayland-cursor0, libwayland-egl1, libx11-6, libxcursor1, libxi6, libxrandr2, libxinerama1, libegl1, libvulkan1, libnss3, libnspr4, libatk1.0-0, libatk-bridge2.0-0, libcups2, libxcomposite1, libxdamage1, libxfixes3, libgbm1, libpango-1.0-0, libcairo2, libasound2\nDescription: Native GPU terminal for focused work\n Independent PTY shells and persistent workspace organization.\n")
-    run("dpkg-deb", "--root-owner-group", "--build", str(stage), str(dist / names["linux-x64-deb"]))
+    if not args.skip_deb:
+        control = stage / "DEBIAN"
+        control.mkdir()
+        # Debian sorts ~ prereleases below the stable version; SemVer build metadata
+        # is represented as a Debian revision without changing executable version.
+        deb_version = ".".join(match[i] for i in (1, 2, 3))
+        if prerelease:
+            deb_version += "~" + match[4]
+        if match[5]:
+            deb_version += "+" + match[5]
+        (control / "control").write_text(f"Package: neptune\nVersion: {deb_version}\nSection: utils\nPriority: optional\nArchitecture: amd64\nMaintainer: Neptune maintainers <maintainers@neptune.rs>\nHomepage: https://neptune.rs\nInstalled-Size: {sum(p.stat().st_size for p in stage.rglob('*') if p.is_file()) // 1024}\nDepends: libc6 (>= 2.35), libgcc-s1, libstdc++6, libxkbcommon0, libxkbcommon-x11-0, libwayland-client0, libwayland-cursor0, libwayland-egl1, libx11-6, libxcursor1, libxi6, libxrandr2, libxinerama1, libegl1, libvulkan1, libnss3, libnspr4, libatk1.0-0, libatk-bridge2.0-0, libcups2, libxcomposite1, libxdamage1, libxfixes3, libgbm1, libpango-1.0-0, libcairo2, libasound2\nDescription: Native GPU terminal for focused work\n Independent PTY shells and persistent workspace organization.\n")
+        run("dpkg-deb", "--root-owner-group", "--build", str(stage), str(dist / names["linux-x64-deb"]))
+        shutil.rmtree(control)
     (stage / "usr/lib/neptune/browser/chrome-sandbox").chmod(0o755)
-    shutil.rmtree(control)
     shutil.copy2(desktop, stage / "neptune.desktop")
     shutil.copy2(ROOT / "assets/icons/neptune-256.png", stage / "neptune.png")
     (stage / ".DirIcon").symlink_to("neptune.png")
