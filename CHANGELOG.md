@@ -70,6 +70,10 @@ their preparation records remain in Git history.
   A selection begins at the cell the button went down on, rather than where
   the pointer had already reached, and keeps every cell it passes over
   whichever way it travels.
+- Launching Neptune from an extracted AppDir, such as a `.desktop` that runs
+  `AppRun` directly, restores the host environment as the AppImage does:
+  terminals and the programs Neptune opens no longer inherit the AppDir's
+  bundled libraries.
 
 ## [0.1.0-rc.5] - 2026-10-10
 
