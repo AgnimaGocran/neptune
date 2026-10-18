@@ -1,6 +1,8 @@
 //! Private Alacritty adapter; snapshots copy only damaged rows and share all others.
 use super::*;
 use crate::view;
+use alacritty_terminal::index::Side;
+use alacritty_terminal::selection::{Selection, SelectionType};
 use alacritty_terminal::term::TermDamage;
 use std::collections::HashMap;
 
@@ -343,6 +345,9 @@ impl TerminalSession {
         );
         if let Some(selection) = &mut terminal.selection {
             selection.update(point, Side::Right);
+            // Every cell the pointer passed over stays selected, whichever way
+            // it travelled: each end takes the side its direction calls for.
+            selection.include_all();
         }
         self.shared.changed();
     }

@@ -567,6 +567,17 @@ fn viewport_scroll_and_selection_use_history_coordinates() {
 }
 
 #[test]
+fn a_backwards_drag_keeps_the_cells_the_pointer_passed_over() {
+    let session = fixture(12, 4, 16);
+    feed(&session, b"hello\r\nworld");
+    // Dragging leftwards from the end of the first word to the line's start,
+    // as the terminal pane reports it.
+    session.start_selection_at(crate::Point::new(0, 4), crate::SelectionType::Simple);
+    session.update_selection_at(crate::Point::new(0, 0));
+    assert_eq!(session.selected_text().as_deref(), Some("hello"));
+}
+
+#[test]
 fn clipboard_notifications_have_project_owned_bounded_delivery() {
     let session = fixture(12, 4, 16);
     for index in 0..70 {

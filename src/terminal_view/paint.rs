@@ -266,26 +266,32 @@ impl Cache {
             if self.mode.intersects(TermMode::MOUSE_MODE) && !ui.input(|i| i.modifiers.shift) {
                 return None;
             }
-            let point = super::geometry::point_at(
-                rect,
-                self.cell,
-                self.columns,
-                self.lines,
-                self.display_offset,
-                pos,
-            );
+            let point_at = |pos| {
+                super::geometry::point_at(
+                    rect,
+                    self.cell,
+                    self.columns,
+                    self.lines,
+                    self.display_offset,
+                    pos,
+                )
+            };
             if response.double_clicked() {
                 Some(SelectionInteraction::Start {
-                    point,
+                    point: point_at(pos),
                     kind: SelectionType::Semantic,
                 })
             } else if response.drag_started() {
+                // A drag is reported once the pointer leaves the click radius,
+                // by which time it has already moved: the anchor is the cell
+                // the button went down on, not the one it reached.
+                let origin = ui.input(|i| i.pointer.press_origin()).unwrap_or(pos);
                 Some(SelectionInteraction::Start {
-                    point,
+                    point: point_at(origin),
                     kind: SelectionType::Simple,
                 })
             } else if response.dragged() {
-                Some(SelectionInteraction::Update(point))
+                Some(SelectionInteraction::Update(point_at(pos)))
             } else if response.clicked() {
                 Some(SelectionInteraction::Clear)
             } else {

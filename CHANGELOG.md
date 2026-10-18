@@ -59,6 +59,16 @@ their preparation records remain in Git history.
   maximize, close with close in the outer corner, and the sidebar toggle
   rests at the top-left while the sidebar is hidden.
 
+### Fixes
+
+- **Paste** from a terminal's menu or the command palette now reads the
+  clipboard the paste chord does. On a Wayland session it read a separate X11
+  clipboard, which is often empty, so it pasted nothing while the chord worked.
+- Dragging over terminal text no longer drops the first character of a line.
+  A selection begins at the cell the button went down on, rather than where
+  the pointer had already reached, and keeps every cell it passes over
+  whichever way it travels.
+
 ## [0.1.0-rc.5] - 2026-10-10
 
 ### What's New

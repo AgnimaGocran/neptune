@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 use alacritty_terminal::event::Event;
 use alacritty_terminal::event::EventListener;
 use alacritty_terminal::grid::{Dimensions, Scroll};
-use alacritty_terminal::index::{Column, Line, Point, Side};
-use alacritty_terminal::selection::{Selection, SelectionType};
+// Read by this module's submodules through `use super::*`.
+use alacritty_terminal::index::{Column, Line, Point};
 use alacritty_terminal::term::cell::Cell;
 use alacritty_terminal::term::{Config, Term, TermMode};
 use alacritty_terminal::vte::ansi::{Processor, Rgb};
@@ -504,25 +504,19 @@ impl TerminalSession {
 
     /// Coordinates are viewport-relative. Scrolled history is accounted for.
     pub fn start_selection(&self, row: usize, col: usize, kind: crate::SelectionType) {
-        let kind = engine::selection_type(kind);
-        let mut terminal = self.lock();
-        let point = viewport_point(&terminal, row, col);
-        terminal.selection = Some(Selection::new(kind, point, Side::Left));
-        if kind == SelectionType::Semantic || kind == SelectionType::Lines {
-            terminal.selection.as_mut().unwrap().include_all();
-        }
-        self.shared.changed();
-        drop(terminal);
+        let point = {
+            let terminal = self.lock();
+            viewport_point(&terminal, row, col)
+        };
+        self.start_selection_at(point, kind);
     }
 
     pub fn update_selection(&self, row: usize, col: usize) {
-        let mut terminal = self.lock();
-        let point = viewport_point(&terminal, row, col);
-        if let Some(selection) = &mut terminal.selection {
-            selection.update(point, Side::Right);
-        }
-        self.shared.changed();
-        drop(terminal);
+        let point = {
+            let terminal = self.lock();
+            viewport_point(&terminal, row, col)
+        };
+        self.update_selection_at(point);
     }
 
     pub fn clear_selection(&self) {
@@ -586,10 +580,10 @@ impl Drop for ChildGuard {
     }
 }
 
-fn viewport_point(terminal: &Term<EventProxy>, row: usize, col: usize) -> Point {
-    Point::new(
-        Line(row.min(terminal.screen_lines() - 1) as i32 - terminal.grid().display_offset() as i32),
-        Column(col.min(terminal.columns() - 1)),
+fn viewport_point(terminal: &Term<EventProxy>, row: usize, col: usize) -> crate::Point {
+    crate::Point::new(
+        row.min(terminal.screen_lines() - 1) as i32 - terminal.grid().display_offset() as i32,
+        col.min(terminal.columns() - 1),
     )
 }
 

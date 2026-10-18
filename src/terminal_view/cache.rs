@@ -502,6 +502,78 @@ mod synthetic_tests {
             output.textures_delta.clear();
             output.shapes
         }
+
+        /// A frame carrying events, keeping the interaction it produced.
+        fn evented(
+            &mut self,
+            events: Vec<egui::Event>,
+        ) -> Option<crate::terminal_view::SelectionInteraction> {
+            let mut interaction = None;
+            let mut output = self.context.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 160.0))),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    self.cache.geometry(ui, self.rect, &self.config);
+                    self.cache.prepare(
+                        ui,
+                        &self.snapshot,
+                        &self.config,
+                        Palette::for_config(&self.config),
+                    );
+                    interaction = self
+                        .cache
+                        .paint(
+                            ui,
+                            self.rect,
+                            &self.config,
+                            Palette::for_config(&self.config),
+                            false,
+                            "",
+                            "",
+                        )
+                        .interaction;
+                },
+            );
+            output.textures_delta.clear();
+            interaction
+        }
+    }
+
+    #[test]
+    fn a_drag_selection_begins_where_the_button_went_down() {
+        let mut fixture = Fixture::new();
+        fixture.frame("");
+        let (left, top, cell) = (fixture.rect.left(), fixture.rect.top(), fixture.cache.cell);
+        let at = |column: f32| Pos2::new(left + cell.x * column + 1.0, top + cell.y * 0.5);
+        let (from, to) = (at(0.0), at(4.0));
+        assert_eq!(fixture.evented(vec![egui::Event::PointerMoved(from)]), None);
+        assert_eq!(
+            fixture.evented(vec![egui::Event::PointerButton {
+                pos: from,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            }]),
+            None
+        );
+        assert_eq!(
+            fixture.evented(vec![egui::Event::PointerMoved(to)]),
+            Some(crate::terminal_view::SelectionInteraction::Start {
+                point: Point::new(0, 0),
+                kind: terminal_core::SelectionType::Simple,
+            }),
+            "the drag is anchored where the button went down"
+        );
+        assert_eq!(
+            fixture.evented(vec![egui::Event::PointerMoved(at(6.0))]),
+            Some(crate::terminal_view::SelectionInteraction::Update(
+                Point::new(0, 6)
+            )),
+            "the drag follows the pointer"
+        );
     }
 
     #[test]
