@@ -833,6 +833,10 @@ fn workspace_menu(
         actions.push(Action::Rename(workspace.id));
         ui.close();
     }
+    if menu_item(ui, p, Icon::Copy, "Clone workspace", "", false) {
+        actions.push(Action::CloneWorkspace(workspace.id));
+        ui.close();
+    }
     if menu_item(ui, p, Icon::ArrowUpRight, "Move to new window", "", false) {
         actions.push(Action::DetachWorkspace {
             workspace: workspace.id,

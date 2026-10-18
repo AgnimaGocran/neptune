@@ -60,6 +60,8 @@ their preparation records remain in Git history.
   rests at the top-left while the sidebar is hidden.
 - Workspaces are chosen with Ctrl+F1–F9 (Command+F1–F9 on macOS) instead of
   Ctrl+Shift+1–9, whose digits followed the keyboard layout.
+- **Clone workspace** in a workspace's menu or the command palette opens
+  another workspace in the folder the first one is working in, right below it.
 
 ### Fixes
 

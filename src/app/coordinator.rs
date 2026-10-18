@@ -651,6 +651,9 @@ impl App {
             // Nothing is closed, so nothing is confirmed.
             Action::Background(pane) => self.dispatch(ctx, Command::BackgroundPane(pane)),
             Action::CloseWorkspace(id) => self.request_close(ctx, Close::Workspace(id)),
+            Action::CloneWorkspace(workspace) => {
+                self.dispatch(ctx, Command::CloneWorkspace(workspace))
+            }
             Action::WindowClose => {
                 self.relaunch = false;
                 self.request_close(ctx, Close::Window(self.controller.model().current_window()))

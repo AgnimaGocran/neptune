@@ -189,6 +189,8 @@ pub enum Action {
     /// where the agent or the project that started it lists it.
     Background(PaneId),
     CloseWorkspace(WorkspaceId),
+    /// A fresh workspace in the same folder, right below this one.
+    CloneWorkspace(WorkspaceId),
     SelectWorkspace(WorkspaceId),
     MoveWorkspace(WorkspaceId, usize),
     /// Tear off this workspace, keeping its live terminals. Pointer coordinates

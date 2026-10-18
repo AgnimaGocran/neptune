@@ -41,6 +41,10 @@ pub enum Command {
         /// An SSH destination: every terminal of the workspace opens there.
         remote: Option<String>,
     },
+    /// A fresh workspace in the same folder and group, opening beside the
+    /// source in the sidebar. The copy starts a new shell; layout, agents and
+    /// projects stay with the original.
+    CloneWorkspace(WorkspaceId),
     AddWorkspaceGroup {
         name: String,
     },
@@ -511,6 +515,100 @@ impl Controller {
                     cwd,
                     remote,
                     remote_cwd: None,
+                    replacement: false,
+                });
+                dirty = true;
+            }
+            Command::CloneWorkspace(workspace) => {
+                let (group, window, name, remote, cwd, remote_cwd) = {
+                    let source = self
+                        .model
+                        .workspace(workspace)
+                        .ok_or(Error::UnknownWorkspace(workspace))?;
+                    let pane = self
+                        .model
+                        .pane(source.active)
+                        .ok_or(Error::UnknownPane(source.active))?;
+                    (
+                        source.group,
+                        source.window,
+                        source.name.clone(),
+                        source.remote.clone(),
+                        pane.cwd.clone(),
+                        pane.remote_cwd.clone(),
+                    )
+                };
+                if self.model.workspaces.len() >= self.model.limits.workspaces {
+                    return Err(Error::WorkspaceLimit);
+                }
+                self.check_pane_capacity(0)?;
+                let id = WorkspaceId::new(self.model.next_workspace);
+                let pane_id = PaneId::new(self.model.next_pane);
+                self.model.next_workspace = self
+                    .model
+                    .next_workspace
+                    .checked_add(1)
+                    .ok_or(Error::IdentityExhausted)?;
+                self.model.next_pane = self
+                    .model
+                    .next_pane
+                    .checked_add(1)
+                    .ok_or(Error::IdentityExhausted)?;
+                let index = self
+                    .model
+                    .workspaces
+                    .iter()
+                    .position(|item| item.id == workspace)
+                    .ok_or(Error::UnknownWorkspace(workspace))?
+                    + 1;
+                self.model.workspaces.insert(
+                    index,
+                    Workspace {
+                        id,
+                        window,
+                        group,
+                        name,
+                        cwd: cwd.clone(),
+                        remote: remote.clone(),
+                        panes: vec![Pane {
+                            id: pane_id,
+                            kind: crate::PaneKind::Terminal,
+                            cwd: cwd.clone(),
+                            remote_cwd: remote_cwd.clone(),
+                            agent: None,
+                            pull_requests: Vec::new(),
+                            attachments: Vec::new(),
+                            spawned_by: None,
+                            project: None,
+                            worktree: None,
+                            generation: 1,
+                            lifecycle: Lifecycle::Starting,
+                        }],
+                        layout: Layout::pane(pane_id),
+                        active: pane_id,
+                    },
+                );
+                // An ungrouped copy holds a top-level place of its own, below
+                // its source; a grouped one is ordered within its folder.
+                if group.is_none()
+                    && let Some(top) = self
+                        .model
+                        .sidebar_order
+                        .iter()
+                        .position(|item| *item == SidebarItem::Workspace(workspace))
+                {
+                    self.model
+                        .sidebar_order
+                        .insert(top + 1, SidebarItem::Workspace(id));
+                }
+                self.model.order_workspaces();
+                self.model.select_workspace(id)?;
+                effects.push(Effect::StartSession {
+                    pane: pane_id,
+                    generation: 1,
+                    cwd,
+                    remote,
+                    remote_cwd,
                     replacement: false,
                 });
                 dirty = true;
@@ -3641,6 +3739,124 @@ mod tests {
             Model::restore(vec![spec], None, true, Limits::default()),
             Err(Error::InvalidRatio)
         );
+    }
+
+    #[test]
+    fn a_clone_opens_below_its_source_in_the_folder_it_is_working_in() {
+        let mut controller = Controller::new(Model::default());
+        let source = create(&mut controller, "app");
+        let pane = controller.model().active_pane().unwrap();
+        controller
+            .dispatch(Command::SplitPane {
+                workspace: source,
+                pane,
+                axis: Axis::Vertical,
+                cwd: PathBuf::from("/fake/split"),
+            })
+            .unwrap();
+        let moved = controller.model().active_pane().unwrap();
+        controller
+            .dispatch(Command::PaneCwdChanged {
+                pane: moved,
+                generation: 1,
+                cwd: PathBuf::from("/elsewhere"),
+            })
+            .unwrap();
+        let below = create(&mut controller, "other");
+
+        let effects = controller.dispatch(Command::CloneWorkspace(source)).unwrap();
+        let clone = controller.model().active_workspace().unwrap();
+        assert_ne!(clone, source);
+        let order: Vec<_> = controller
+            .model()
+            .workspaces()
+            .iter()
+            .map(Workspace::id)
+            .collect();
+        assert_eq!(order, [source, clone, below], "a copy sits under its source");
+
+        let copy = controller.model().workspace(clone).unwrap();
+        assert_eq!(copy.name(), "app");
+        assert_eq!(copy.group(), None);
+        assert_eq!(
+            copy.cwd(),
+            std::path::Path::new("/elsewhere"),
+            "the folder its source works in"
+        );
+        assert_eq!(copy.panes().len(), 1, "a fresh shell, not the source's panes");
+        let fresh = copy.active();
+        let pane = copy.pane(fresh).unwrap();
+        assert_eq!(pane.kind(), PaneKind::Terminal);
+        assert_eq!(pane.cwd(), std::path::Path::new("/elsewhere"));
+        assert!(matches!(pane.lifecycle(), Lifecycle::Starting));
+        assert!(effects.contains(&Effect::StartSession {
+            pane: fresh,
+            generation: 1,
+            cwd: PathBuf::from("/elsewhere"),
+            remote: None,
+            remote_cwd: None,
+            replacement: false,
+        }));
+    }
+
+    #[test]
+    fn a_clone_of_a_grouped_workspace_lands_below_it_in_its_folder() {
+        let mut controller = Controller::new(Model::default());
+        controller
+            .dispatch(Command::AddWorkspaceGroup {
+                name: "Work".into(),
+            })
+            .unwrap();
+        let group = controller.model().groups()[0].id();
+        let in_group = |controller: &mut Controller, name: &str| {
+            controller
+                .dispatch(Command::AddWorkspace {
+                    group: Some(group),
+                    cwd: PathBuf::from("/fake"),
+                    name: name.into(),
+                    remote: None,
+                })
+                .unwrap();
+            controller.model().active_workspace().unwrap()
+        };
+        let first = in_group(&mut controller, "first");
+        let second = in_group(&mut controller, "second");
+
+        controller.dispatch(Command::CloneWorkspace(first)).unwrap();
+        let clone = controller.model().active_workspace().unwrap();
+        let order: Vec<_> = controller
+            .model()
+            .workspaces()
+            .iter()
+            .map(Workspace::id)
+            .collect();
+        assert_eq!(order, [first, clone, second]);
+        assert_eq!(
+            controller.model().workspace(clone).unwrap().group(),
+            Some(group)
+        );
+        assert_eq!(
+            controller.model().sidebar_order(),
+            [SidebarItem::Group(group)],
+            "the copy stays a member of the folder"
+        );
+    }
+
+    #[test]
+    fn a_clone_beyond_the_workspace_limit_is_refused() {
+        let mut controller = Controller::new(Model::new(Limits {
+            workspaces: 1,
+            ..Default::default()
+        }));
+        let source = create(&mut controller, "app");
+        let before = controller.model().clone();
+        let generation = controller.generation();
+        assert_eq!(
+            controller.dispatch(Command::CloneWorkspace(source)),
+            Err(Error::WorkspaceLimit)
+        );
+        assert_eq!(controller.model(), &before);
+        assert_eq!(controller.generation(), generation);
     }
 }
 

@@ -488,6 +488,13 @@ fn commands(view: &PaletteView) -> Vec<Command> {
             ),
             command(
                 "Workspace",
+                Icon::Copy,
+                "Clone workspace",
+                "",
+                [Action::CloneWorkspace(active)],
+            ),
+            command(
+                "Workspace",
                 Icon::ArrowUpRight,
                 "Move workspace to new window",
                 "",
