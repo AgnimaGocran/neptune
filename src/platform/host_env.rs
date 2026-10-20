@@ -6,8 +6,9 @@
 //! `argv[0]` of every command, which breaks multi-call binaries such as rustup's
 //! `cargo`, and host programs would load Neptune's bundled libraries. An
 //! extracted AppDir (e.g. a `.desktop` whose `Exec=` points at `AppRun`)
-//! exports `LD_LIBRARY_PATH` and sets `APPDIR` but never `APPIMAGE`, so the
-//! cleanup below fires there as well.
+//! exports `LD_LIBRARY_PATH` but never `APPIMAGE`, so the cleanup below fires
+//! there as well; when a launcher exports no `APPDIR` at all, the bundle is
+//! still recognized from the libraries sitting beside this executable.
 use std::{
     ffi::{OsStr, OsString},
     path::{Path, PathBuf},
@@ -30,13 +31,15 @@ pub fn appimage() -> bool {
 
 /// Restore the environment the user launched Neptune from.
 ///
-/// Fires on either of two launch shapes:
+/// Fires on any of three launch shapes:
 /// - a real AppImage (the runtime sets `APPIMAGE` and `APPDIR`, and `AppRun`
-///   prepends the bundled libraries to `LD_LIBRARY_PATH`); or
-/// - an extracted AppDir (a `.desktop` points `Exec=` at `AppRun`, which sets
-///   `APPDIR` and exports `LD_LIBRARY_PATH` but never `APPIMAGE`).
+///   prepends the bundled libraries to `LD_LIBRARY_PATH`);
+/// - an extracted AppDir (a `.desktop` points `Exec=` at `AppRun`, which
+///   exports `APPDIR` and `LD_LIBRARY_PATH` but never `APPIMAGE`); or
+/// - a launcher that exports only `LD_LIBRARY_PATH`: the bundle is then
+///   recognized from the bundled library directory beside this executable.
 ///
-/// In both cases `LD_LIBRARY_PATH` is rewritten to its host-only value and the
+/// In every case `LD_LIBRARY_PATH` is rewritten to its host-only value and the
 /// launcher bookkeeping variables are removed.
 ///
 /// The dynamic loader reads `LD_LIBRARY_PATH` once at startup, so Neptune keeps
@@ -45,13 +48,15 @@ pub fn appimage() -> bool {
 /// # Safety
 /// Must run before any other thread exists; it mutates the process environment.
 pub unsafe fn restore() {
-    let appdir = std::env::var_os("APPDIR");
+    let appdir = std::env::var_os("APPDIR")
+        .map(PathBuf::from)
+        .or_else(bundled_appdir);
     if !appimage() && appdir.is_none() {
         return;
     }
     let libraries = std::env::var_os("LD_LIBRARY_PATH")
         .zip(appdir.as_deref())
-        .map(|(path, appdir)| host_library_path(&path, Path::new(appdir)));
+        .map(|(path, appdir)| host_library_path(&path, appdir));
     // SAFETY: the caller guarantees no other thread reads the environment.
     unsafe {
         match libraries {
@@ -63,6 +68,61 @@ pub unsafe fn restore() {
             std::env::remove_var(name);
         }
     }
+}
+
+/// The AppDir this executable belongs to, when no launcher marker was
+/// exported: `<appdir>/usr/bin/neptune` with `AppRun` beside it names the
+/// bundle, and `<appdir>/usr/lib` on `LD_LIBRARY_PATH` names the leak. Older
+/// `AppRun` scripts kept `APPDIR` in the shell and exported only the library
+/// path, and hand-written units can do the same; the shape of the launch is
+/// what matters, not the marker.
+fn bundled_appdir() -> Option<PathBuf> {
+    let libraries = std::env::var_os("LD_LIBRARY_PATH")?;
+    let exe = std::env::current_exe().ok()?;
+    let appdir = bundled_appdir_at(&libraries, &exe)?;
+    if !appdir.join("AppRun").is_file() {
+        return None;
+    }
+    Some(appdir)
+}
+
+/// The `usr` directory of the bundle layout `exe` sits in, if it does.
+fn bundle_usr(exe: &Path) -> Option<&Path> {
+    let bin = exe.parent()?;
+    if bin.file_name()? != OsStr::new("bin") {
+        return None;
+    }
+    let usr = bin.parent()?;
+    if usr.file_name()? != OsStr::new("usr") {
+        return None;
+    }
+    Some(usr)
+}
+
+/// The shape check of [`bundled_appdir`] without the `AppRun` lookup.
+fn bundled_appdir_at(libraries: &OsStr, exe: &Path) -> Option<PathBuf> {
+    let usr = bundle_usr(exe)?;
+    let libraries_dir = usr.join("lib");
+    if !std::env::split_paths(libraries)
+        .any(|entry| entry.starts_with(&libraries_dir))
+    {
+        return None;
+    }
+    usr.parent().map(Path::to_path_buf)
+}
+
+/// The AppDir beside this executable, whatever the environment says now.
+///
+/// `restore` removes the launcher markers, so later questions — such as
+/// whether the browser subprocess may fall back to the bundle's libraries —
+/// ask the filesystem instead of the environment.
+pub fn bundle_beside_executable() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let appdir = bundle_usr(&exe)?.parent()?.to_path_buf();
+    if !appdir.join("AppRun").is_file() {
+        return None;
+    }
+    Some(appdir)
 }
 
 /// `path` without the entries inside `appdir`; `None` when nothing remains.
@@ -144,5 +204,34 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn a_bundle_without_exported_markers_is_found_from_the_executable() {
+        let appdir = Path::new("/tmp/.mount_neptunAbCdEf");
+        let exe = appdir.join("usr/bin/neptune");
+        let detect = |libraries: &str| bundled_appdir_at(OsStr::new(libraries), &exe);
+        assert_eq!(detect("/tmp/.mount_neptunAbCdEf/usr/lib"), Some(appdir.into()));
+        // The browser subprocess libraries live deeper in the bundle.
+        assert_eq!(
+            detect("/tmp/.mount_neptunAbCdEf/usr/lib/neptune/browser"),
+            Some(appdir.into())
+        );
+        // Host-only entries name no bundle.
+        assert_eq!(detect("/opt/cuda/lib64:/usr/local/lib"), None);
+        // The same shape as a system install is not decided here;
+        // `bundled_appdir` also requires `AppRun` beside the directory.
+        assert_eq!(
+            bundled_appdir_at(OsStr::new("/usr/lib"), Path::new("/usr/bin/neptune")),
+            Some(PathBuf::from("/"))
+        );
+        // A binary outside a usr/bin layout is no bundle.
+        assert_eq!(
+            bundled_appdir_at(
+                OsStr::new("/home/u/.local/opt/neptune/usr/lib"),
+                Path::new("/home/u/.local/opt/neptune/neptune"),
+            ),
+            None
+        );
     }
 }

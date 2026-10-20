@@ -1126,12 +1126,14 @@ fn sandbox_unavailable(host: &std::path::Path) -> bool {
     }
 }
 
-/// The search path that puts an AppImage's own Chromium runtime libraries
-/// first, when this system cannot load the host with the libraries it has.
-/// Systems that can keep their own, which match their graphics and NSS setup.
+/// The search path that puts a bundle's own Chromium runtime libraries first,
+/// when this system cannot load the host with the libraries it has. An
+/// AppImage and an extracted AppDir both carry the bundle; a packaged install
+/// relies on the host alone. Systems that can keep their own, which match
+/// their graphics and NSS setup.
 #[cfg(target_os = "linux")]
 fn bundled_libraries(host: &std::path::Path) -> Option<std::ffi::OsString> {
-    if !crate::platform::host_env::appimage() {
+    if crate::platform::host_env::bundle_beside_executable().is_none() {
         return None;
     }
     // `usr/lib`, three levels above `usr/lib/neptune/browser/neptune-browser`.

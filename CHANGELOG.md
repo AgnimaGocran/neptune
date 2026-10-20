@@ -75,7 +75,8 @@ their preparation records remain in Git history.
 - Launching Neptune from an extracted AppDir, such as a `.desktop` that runs
   `AppRun` directly, restores the host environment as the AppImage does:
   terminals and the programs Neptune opens no longer inherit the AppDir's
-  bundled libraries.
+  bundled libraries. A launcher that exports only `LD_LIBRARY_PATH` is
+  covered too: the bundle is also recognized beside the executable.
 
 ## [0.1.0-rc.5] - 2026-10-10
 
