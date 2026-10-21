@@ -204,6 +204,7 @@ fn browser_restoration_gives_a_cli_command_a_terminal_target() {
         Default::default(),
     )
     .unwrap();
+    app.initial_cwd = None;
     app.complete_startup(&egui::Context::default(), loaded(app.config.clone(), model));
     let (target, _) = app.command_target.unwrap();
     assert_eq!(
@@ -256,6 +257,7 @@ fn explicit_startup_commands_replace_agent_restoration_with_a_shell() {
             }),
         })
         .unwrap();
+    app.initial_cwd = None;
     app.complete_startup(&ctx, loaded(app.config.clone(), controller.model().clone()));
     assert!(app.controller.model().pane(pane).unwrap().agent().is_none());
     assert_eq!(app.command_target, Some((pane, 1)));
@@ -585,6 +587,7 @@ fn startup_actions_wait_then_replay_on_restored_state_without_retargeting_the_cl
     app.action(&ctx, Action::ToggleSidebar);
     assert!(app.controller.model().workspaces().is_empty());
     assert_eq!(app.sessions.usage().starting, 0);
+    app.initial_cwd = None;
     app.complete_startup(&ctx, loaded(app.config.clone(), restored.model().clone()));
     assert_eq!(app.controller.model().workspaces().len(), 2);
     assert_eq!(app.controller.model().workspaces()[0].name(), "Restored");
@@ -2672,6 +2675,7 @@ fn remote_directories_survive_shutdown_and_restoration_per_terminal() {
     assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
     let (mut reopened, _sender) = fixture(root.path());
     reopened.command = None;
+    reopened.initial_cwd = None;
     reopened.ssh_client = client.to_str().unwrap().into();
     reopened.complete_startup(
         &ctx,
@@ -4671,4 +4675,67 @@ fn custom_keybindings_clipboard_uses_modifiers_at_the_event_even_if_released_in_
     .textures_delta
     .clear();
     assert_eq!(app.config.font_size, 15.0);
+}
+
+#[test]
+fn a_launchers_folder_lands_after_the_session_in_that_folder() {
+    let mut controller = Controller::new(Model::default());
+    for (name, cwd) in [
+        ("home", "/home/agnima"),
+        ("neptune", "/opt/projects/neptune"),
+    ] {
+        controller
+            .dispatch(Command::AddWorkspace {
+                cwd: cwd.into(),
+                name: name.into(),
+                remote: None,
+                group: None,
+            })
+            .unwrap();
+    }
+    controller
+        .dispatch(Command::AddWorkspaceGroup {
+            name: "work".into(),
+        })
+        .unwrap();
+    let group = controller.model().groups()[0].id();
+    controller
+        .dispatch(Command::AddWorkspace {
+            cwd: "/opt/projects/other".into(),
+            name: "other".into(),
+            remote: None,
+            group: Some(group),
+        })
+        .unwrap();
+    controller
+        .dispatch(Command::AddWorkspace {
+            cwd: "/opt/projects".into(),
+            name: "remote".into(),
+            remote: Some("me@devbox".into()),
+            group: None,
+        })
+        .unwrap();
+    // The grouped session keeps its folder and the remote one its host: the
+    // folder lands right after the ungrouped local session inside it.
+    assert_eq!(
+        folder_placement(controller.model(), std::path::Path::new("/opt/projects")),
+        Some(2)
+    );
+}
+
+#[test]
+fn a_launchers_folder_without_a_related_session_goes_to_the_end() {
+    let mut controller = Controller::new(Model::default());
+    controller
+        .dispatch(Command::AddWorkspace {
+            cwd: "/home/agnima".into(),
+            name: "home".into(),
+            remote: None,
+            group: None,
+        })
+        .unwrap();
+    assert_eq!(
+        folder_placement(controller.model(), std::path::Path::new("/opt/projects")),
+        None
+    );
 }

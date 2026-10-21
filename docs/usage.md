@@ -363,7 +363,7 @@ Processes can request attention through BEL, OSC 9, OSC 99 and OSC 777. BEL prod
 The examples below assume `neptune` is on your `PATH`. Run the configuration
 example from the repository root.
 
-When no saved workspace can be restored, Neptune opens a terminal in your home directory (`~`). Use `--cwd` to choose another starting directory, or `--ssh` to open a workspace on a host. `--command` cannot be combined with `--ssh`, and a startup command is never typed into a terminal that is connecting over SSH.
+When no saved workspace can be restored, Neptune opens a terminal in your home directory (`~`). Use `--cwd` to open another folder as well: it joins the saved sessions, right after the session already working in that folder, or at the end. `--ssh` opens a workspace on a host instead of the saved set. `--command` cannot be combined with `--ssh`, and a startup command is never typed into a terminal that is connecting over SSH.
 
 ```sh
 neptune --cwd /path/to/project

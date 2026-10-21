@@ -185,8 +185,9 @@ impl App {
         let config_path = launch.config.unwrap_or_else(|| data.join("config.toml"));
         let state_path = data.join("workspaces.json");
         let ephemeral = launch.screenshot.is_some();
-        let restore =
-            !launch.no_restore && launch.cwd.is_none() && launch.ssh.is_none() && !ephemeral;
+        // A launcher opening a folder still restores the saved sessions; the
+        // folder joins them below.
+        let restore = !launch.no_restore && launch.ssh.is_none() && !ephemeral;
         let (sender, startup) = mpsc::sync_channel(1);
         let settings = config_path.clone();
         let state = state_path.clone();
@@ -605,6 +606,34 @@ impl App {
             let cwd = self.initial_cwd.take().unwrap_or_else(default_cwd);
             let remote = self.initial_remote.take();
             self.create_workspace(ctx, cwd, None, remote, None);
+        } else if let Some(folder) = self.initial_cwd.take() {
+            // Restored sessions stay; the folder a launcher asked for joins
+            // them, after the session already working in it, or at the end.
+            let index = folder_placement(self.controller.model(), &folder);
+            let known: Vec<_> = self
+                .controller
+                .model()
+                .workspaces()
+                .iter()
+                .map(|workspace| workspace.id())
+                .collect();
+            self.create_workspace(ctx, folder.clone(), None, None, None);
+            let added = self
+                .controller
+                .model()
+                .workspaces()
+                .iter()
+                .map(|workspace| workspace.id())
+                .find(|id| !known.contains(id));
+            if let (Some(added), Some(index)) = (added, index) {
+                self.dispatch(
+                    ctx,
+                    neptune_model::Command::MoveWorkspace {
+                        workspace: added,
+                        index,
+                    },
+                );
+            }
         }
         if self.command.is_some()
             && let Some(pane) = self.controller.model().active_pane()
@@ -1904,6 +1933,23 @@ impl App {
         }
     }
 }
+/// Where a launcher's folder joins the restored sessions: right after the
+/// last ungrouped local session of this window already working in that
+/// folder or inside it, or `None` for the end. Grouped sessions keep their
+/// folders, and another window's order is not ours to rearrange.
+fn folder_placement(model: &neptune_model::Model, folder: &std::path::Path) -> Option<usize> {
+    model
+        .workspaces()
+        .iter()
+        .rposition(|workspace| {
+            workspace.window() == model.current_window()
+                && workspace.group().is_none()
+                && workspace.remote().is_none()
+                && (workspace.cwd().starts_with(folder) || folder.starts_with(workspace.cwd()))
+        })
+        .map(|position| position + 1)
+}
+
 /// Where a workspace opens when no directory was chosen for it.
 fn default_cwd() -> PathBuf {
     directories::BaseDirs::new()

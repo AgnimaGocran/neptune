@@ -72,6 +72,9 @@ their preparation records remain in Git history.
   A selection begins at the cell the button went down on, rather than where
   the pointer had already reached, and keeps every cell it passes over
   whichever way it travels.
+- Opening a folder from the file manager while Neptune is closed no longer
+  discards the saved sessions: they are restored, and the folder joins them,
+  right after the session already working in that folder, or at the end.
 - Launching Neptune from an extracted AppDir, such as a `.desktop` that runs
   `AppRun` directly, restores the host environment as the AppImage does:
   terminals and the programs Neptune opens no longer inherit the AppDir's
