@@ -27,7 +27,7 @@ Workspace navigation, independent shell panes, split layouts, scrollback, termin
 
 Hold Command on macOS, Ctrl on Linux/Windows, or Alt to reveal small shortcut hints in the top-right of the first nine workspace rows. The hints follow the workspace order and show the configured shortcut. They disappear when you release the modifier; an unbound workspace has no hint. Selecting a workspace with its shortcut or the palette opens its group if it is collapsed.
 
-New workspace opens and selects a fresh shell at `~` immediately. Rename it later by double-clicking its sidebar row or choosing Rename workspace from its menu or the command palette. **Clone workspace** in the same menu or palette opens another workspace in the folder the first one is working in, right below it.
+New workspace opens and selects a fresh shell at `~` immediately. Rename it later by double-clicking its sidebar row or choosing Rename workspace from its menu or the command palette. **Duplicate** in the same menu or palette opens another workspace in the folder the first one is working in, right below it.
 
 The directory beneath a local workspace's name follows its focused terminal. Switching between tabs or split panes updates that directory; inactive workspaces show their last focused terminal's directory. Long paths are shortened to fit the sidebar. SSH workspaces show their host there. When that directory is inside a Git repository, its branch follows the path (or the short name of the commit, when no branch is checked out), with a dot while the repository has changes that are not committed. The branch is read again every five seconds while the sidebar is in view, less often while another window is the active one, and not at all while Neptune is minimized.
 

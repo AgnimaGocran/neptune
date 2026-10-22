@@ -489,7 +489,7 @@ fn commands(view: &PaletteView) -> Vec<Command> {
             command(
                 "Workspace",
                 Icon::Copy,
-                "Clone workspace",
+                "Duplicate",
                 "",
                 [Action::CloneWorkspace(active)],
             ),
