@@ -14,6 +14,7 @@ mod git;
 mod hints;
 mod image_preview;
 mod input;
+mod memory;
 mod panel;
 mod ports;
 mod projects;
@@ -156,6 +157,8 @@ pub struct App {
     worktrees: worktrees::Worktrees,
     /// A paste chord pressed this frame that the toolkit did not deliver.
     swallowed_paste: Option<egui::Modifiers>,
+    /// The memory each tab's process tree holds, as it was last measured.
+    memory: memory::Memory,
     /// Host shortcuts held until release, including after modifiers or UI change.
     shortcut_keys: std::collections::HashSet<egui::Key>,
     shortcut_modifiers: egui::Modifiers,
@@ -304,6 +307,7 @@ impl App {
             paste_chord: Default::default(),
             worktrees: Default::default(),
             swallowed_paste: None,
+            memory: Default::default(),
             shortcut_keys: Default::default(),
             shortcut_modifiers: egui::Modifiers::NONE,
             windows: Default::default(),
@@ -323,6 +327,12 @@ impl App {
         }
         let shown = self.visible_panes(ctx);
         let focused = self.focused_pane(ctx);
+        if self.config.show_tab_memory {
+            let App {
+                memory, sessions, ..
+            } = self;
+            memory.poll(sessions, &shown);
+        }
         for completion in self.browsers.poll(ctx, &shown, focused) {
             if let Ok(effects) = self.controller.complete(completion) {
                 self.execute(ctx, effects);
@@ -803,6 +813,7 @@ impl App {
                         snapshot: None,
                         starting: false,
                         remote: None,
+                        memory: None,
                     }
                 } else if let Some(session) = self.sessions.get(pane.id()) {
                     if shown {
@@ -831,6 +842,7 @@ impl App {
                         snapshot: shown.then(|| session.viewport()),
                         starting: false,
                         remote: remote.clone(),
+                        memory: self.memory.bytes(pane.id()),
                     }
                 } else {
                     let title = match pane.lifecycle() {
@@ -872,6 +884,7 @@ impl App {
                         }),
                         starting: !matches!(pane.lifecycle(), Lifecycle::Failed(_)),
                         remote: remote.clone(),
+                        memory: None,
                     }
                 };
                 (pane.id(), presentation)

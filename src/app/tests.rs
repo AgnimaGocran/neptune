@@ -81,6 +81,7 @@ pub(super) fn fixture(root: &std::path::Path) -> (App, mpsc::SyncSender<Startup>
         paste_chord: Default::default(),
         worktrees: Default::default(),
         swallowed_paste: None,
+        memory: Default::default(),
         shortcut_keys: Default::default(),
         shortcut_modifiers: egui::Modifiers::NONE,
         windows: Default::default(),

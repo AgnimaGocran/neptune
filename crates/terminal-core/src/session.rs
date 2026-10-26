@@ -176,6 +176,21 @@ impl TerminalSession {
         receiver
     }
 
+    /// Ask the session worker to measure the memory its process tree holds,
+    /// without blocking a frame. Only one pending request is retained; a newer
+    /// request disconnects the previous receiver.
+    pub fn check_memory(&self) -> Receiver<Option<u64>> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        if matches!(self.metadata().status, SessionStatus::Exited { .. })
+            || self.shared.stopped.load(Ordering::Acquire)
+        {
+            let _ = sender.try_send(None);
+        } else {
+            *self.shared.memory_check.lock() = Some(sender);
+        }
+        receiver
+    }
+
     pub fn spawn(
         options: SessionOptions,
         repaint: Repaint,

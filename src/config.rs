@@ -52,6 +52,8 @@ pub struct Config {
     pub max_panes_per_workspace: usize,
     /// Most panes across every window, each with a session of its own.
     pub max_total_panes: usize,
+    /// Show the memory a tab's process tree holds beside its title.
+    pub show_tab_memory: bool,
 }
 
 /// A saved browser profile the user made. Its cookies and site data are kept
@@ -188,6 +190,7 @@ impl Default for Config {
             max_workspaces: 48,
             max_panes_per_workspace: 16,
             max_total_panes: 128,
+            show_tab_memory: false,
         }
     }
 }

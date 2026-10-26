@@ -1,10 +1,6 @@
 //! The tests of the chrome, kept beside the code they cover.
     use super::*;
     use super::drag::SIDEBAR_SLIDE;
-    use super::list::*;
-    use super::menus::*;
-    use super::rows::*;
-    use super::toolbar::*;
     use crate::config::Config;
     use eframe::egui::Event;
 

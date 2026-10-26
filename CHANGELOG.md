@@ -67,6 +67,10 @@ their preparation records remain in Git history.
   48 workspaces, 16 panes in one workspace and 128 panes across every window
   by default.
 - Reaching a limit now says how many there may be and which setting to raise.
+- A tab can show the memory its terminal's process tree holds, beside the
+  title: Preferences → Text → Tabs, or `show_tab_memory` in the configuration.
+  The reading is measured every few seconds off the frame, and covers the
+  shell and everything it started.
 
 ### Fixes
 

@@ -337,6 +337,21 @@ pub(super) fn engine_loop(
             let _ = reply.try_send(activity);
             shared.force_repaint();
         }
+        let memory = shared.memory_check.lock().take();
+        if let Some(reply) = memory {
+            // This worker owns/reaps the child, so the tree is measured while
+            // the process is still the one that was spawned.
+            let bytes = if exit.is_some() {
+                None
+            } else {
+                shared
+                    .metadata
+                    .lock()
+                    .process_id
+                    .and_then(platform::memory_bytes)
+            };
+            let _ = reply.try_send(bytes);
+        }
         if last_cwd.elapsed() >= Duration::from_secs(1) {
             let pid = shared.metadata.lock().process_id;
             if let Some(pid) = pid

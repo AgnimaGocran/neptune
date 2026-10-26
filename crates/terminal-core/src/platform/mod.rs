@@ -2,7 +2,7 @@
 use super::*;
 
 mod processes;
-pub(super) use processes::process_activity;
+pub(super) use processes::{memory_bytes, process_activity};
 
 #[cfg(unix)]
 pub(super) fn poll_pty(fd: libc::c_int, events: libc::c_short, shared: &Shared) -> bool {

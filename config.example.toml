@@ -97,6 +97,11 @@ max_workspaces = 48
 max_panes_per_workspace = 16
 max_total_panes = 128
 
+# Show the memory a tab's process tree holds beside its title. The reading is
+# measured every few seconds and covers the shell and everything it started.
+# Preferences -> Text -> Tabs turns it on and off.
+show_tab_memory = false
+
 # Override application shortcuts. Restart Neptune after editing this file.
 # Omitted actions keep their defaults; [] disables all shortcuts for an action.
 # Lists replace defaults, and may contain up to 8 chords per action.

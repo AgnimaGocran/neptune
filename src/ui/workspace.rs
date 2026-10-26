@@ -38,12 +38,27 @@ pub struct PanePresentation {
     pub snapshot: Option<ViewportSnapshot>,
     /// The shell has been requested but has not started yet.
     pub starting: bool,
+    /// The memory the terminal's process tree holds, as it was last measured.
+    pub memory: Option<u64>,
     /// SSH destination when the terminal runs on another machine.
     pub remote: Option<String>,
 }
 
+/// The memory a tab holds, in a short form: 812K, 128M, 1.4G.
+fn memory_label(bytes: u64) -> String {
+    const MEBIBYTE: f64 = 1024.0 * 1024.0;
+    let megabytes = bytes as f64 / MEBIBYTE;
+    if megabytes >= 1024.0 {
+        format!("{:.1}G", megabytes / 1024.0)
+    } else if megabytes >= 1.0 {
+        format!("{:.0}M", megabytes)
+    } else {
+        format!("{:.0}K", bytes as f64 / 1024.0)
+    }
+}
+
 impl PanePresentation {
-    /// Where the terminal is: its host when remote, otherwise its directory.
+    /// Where a terminal is: its host when remote, otherwise its directory.
     pub fn location(&self) -> String {
         match &self.remote {
             Some(destination) => destination.clone(),
@@ -651,6 +666,22 @@ fn tab(
         left += 17.0;
     }
     let room = (right - left).max(0.0);
+    // The memory the tab's process tree holds, when the user asked to see it.
+    let memory = stage
+        .config
+        .show_tab_memory
+        .then_some(presentation.memory)
+        .flatten()
+        .filter(|_| room > 60.0)
+        .map(memory_label);
+    let memory_width = memory
+        .as_ref()
+        .map(|label| {
+            elided(&painter, label, theme::regular(11.0), p.muted, 64.0).size().x
+        })
+        .unwrap_or(0.0);
+    let title_right = (right - memory_width - 9.0).max(left);
+    let room = (title_right - left).max(0.0);
     let title = elided(
         &painter,
         branch.map_or(&pane_label(metadata), |branch| branch),
@@ -679,6 +710,20 @@ fn tab(
             &painter,
             Pos2::new(left + title_width + 9.0, rect.center().y + 1.0),
             elided(&painter, &folder, theme::regular(11.5), p.muted, remaining),
+        );
+    }
+    if let Some(label) = memory {
+        let galley = elided(
+            &painter,
+            &label,
+            theme::regular(11.0),
+            p.muted,
+            (right - title_right).max(0.0),
+        );
+        galley_at(
+            &painter,
+            Pos2::new(right - galley.size().x, rect.center().y + 1.0),
+            galley,
         );
     }
     chips.paint(&painter, p, actions);
@@ -1769,6 +1814,7 @@ mod tests {
                                 snapshot: Some(ViewportSnapshot::blank(80, 24)),
                                 starting: false,
                                 remote: None,
+                                memory: None,
                             },
                         )
                     })
@@ -1927,6 +1973,7 @@ mod tests {
             snapshot: None,
             starting: false,
             remote: None,
+            memory: None,
         };
         bench.presentations.insert(third, presentation);
         if let neptune_model::Layout::Split { first: place, .. } = &mut bench.layout {
@@ -2190,6 +2237,7 @@ mod tests {
                     snapshot: Some(ViewportSnapshot::blank(80, 24)),
                     starting: false,
                     remote: None,
+                    memory: None,
                 };
                 (id, presentation)
             })
@@ -2281,5 +2329,12 @@ mod tests {
             status_text(&SessionStatus::Error("missing".into())),
             Some(("Could not start shell".into(), true))
         );
+    }
+
+    #[test]
+    fn memory_is_shown_in_a_short_form() {
+        assert_eq!(memory_label(512 * 1024), "512K");
+        assert_eq!(memory_label(128 * 1024 * 1024), "128M");
+        assert_eq!(memory_label(1536 * 1024 * 1024), "1.5G");
     }
 }

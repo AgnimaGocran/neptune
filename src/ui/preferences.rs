@@ -171,12 +171,13 @@ enum Setting {
     DesktopBanners,
     CheckUpdates,
     ReleaseChannel,
+    ShowTabMemory,
     Version,
 }
 
 /// Each setting with its pane, its label and the other words people use for
 /// it. A search reads the pane's name and the label as well as these.
-const INDEX: [(Setting, Pane, &str, &str); 19] = [
+const INDEX: [(Setting, Pane, &str, &str); 20] = [
     (
         Setting::FileEditor,
         Pane::General,
@@ -290,6 +291,12 @@ const INDEX: [(Setting, Pane, &str, &str); 19] = [
         Pane::Updates,
         "Check for updates",
         "update version installed about release review download install upgrade new latest neptune",
+    ),
+    (
+        Setting::ShowTabMemory,
+        Pane::Text,
+        "Show memory in tabs",
+        "memory ram usage resident process tab title bytes megabytes resource",
     ),
 ];
 
@@ -966,7 +973,7 @@ fn text(
     fonts: &Fonts,
     picker: &mut FontPicker,
 ) {
-    use Setting::{CursorBlink, CursorStyle, FontFamily, FontSize, LineSpacing};
+    use Setting::{CursorBlink, CursorStyle, FontFamily, FontSize, LineSpacing, ShowTabMemory};
     let pane = Pane::Text;
     card(
         ui,
@@ -1062,6 +1069,25 @@ fn text(
                 rows.row(ui, "Blink", |ui| {
                     toggle(ui, p, &mut config.cursor_blink, "Blink cursor");
                 });
+            }
+        },
+    );
+    card(
+        ui,
+        p,
+        shown,
+        pane,
+        "Tabs",
+        &[ShowTabMemory],
+        |ui, rows| {
+            if shown.has(ShowTabMemory) {
+                rows.row(ui, "Show memory in tabs", |ui| {
+                    toggle(ui, p, &mut config.show_tab_memory, "Show memory in tabs");
+                });
+                rows.note(
+                    ui,
+                    "The memory the terminal's process tree holds, measured every few seconds.",
+                );
             }
         },
     );

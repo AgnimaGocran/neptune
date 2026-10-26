@@ -60,7 +60,7 @@ running processes. Other windows keep working. **Quit Neptune** in the palette
 quits all windows and checks every terminal. Closing the last visible window
 also quits Neptune. Quitting retains the organization for the next launch;
 closing a workspace or a window while others remain removes its workspaces from
-the saved organization. All windows share Neptune's session and resource limits: 48 workspaces, 16 panes in one workspace, and 128 panes across every window by default. `max_workspaces`, `max_panes_per_workspace` and `max_total_panes` in the configuration change them, and a limit that is reached says which one it was.
+the saved organization. All windows share Neptune's session and resource limits: 48 workspaces, 16 panes in one workspace, and 128 panes across every window by default. `max_workspaces`, `max_panes_per_workspace` and `max_total_panes` in the configuration change them, and a limit that is reached says which one it was. Preferences → Text → Tabs shows the memory a terminal's process tree holds beside its tab title, measured every few seconds; `show_tab_memory` in the configuration turns it on and off.
 
 With workspace restoration enabled, Neptune reopens the saved windows,
 workspaces, tabs and splits with fresh shells in their remembered directories.

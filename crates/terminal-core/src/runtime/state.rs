@@ -56,6 +56,7 @@ pub(super) enum Output {
 
 pub(super) struct Shared {
     pub(super) process_check: Mutex<Option<SyncSender<ProcessActivity>>>,
+    pub(super) memory_check: Mutex<Option<SyncSender<Option<u64>>>>,
     pub(super) metadata: Mutex<SessionMetadata>,
     pub(super) size: Mutex<Size>,
     pub(super) events: Mutex<VecDeque<crate::TerminalEvent>>,
@@ -93,6 +94,7 @@ impl Shared {
     ) -> Self {
         Self {
             process_check: Mutex::new(None),
+            memory_check: Mutex::new(None),
             metadata: Mutex::new(metadata),
             size: Mutex::new(size),
             config: Mutex::new(config),
