@@ -8,6 +8,41 @@ use crate::runtime::persistence::SaveKind;
 /// The system OpenSSH client, resolved through `PATH`.
 pub(super) const SSH_CLIENT: &str = "ssh";
 
+/// What a limit error says: how many there may be, and what to do about it.
+fn limit_message(error: &neptune_model::Error, limits: neptune_model::Limits) -> String {
+    use neptune_model::Error;
+    let plural = |count: usize, word: &str| {
+        if count == 1 {
+            format!("{count} {word}")
+        } else {
+            format!("{count} {word}s")
+        }
+    };
+    match error {
+        Error::WorkspaceLimit => format!(
+            "Neptune holds at most {}. Close some, or raise max_workspaces in the config.",
+            plural(limits.workspaces, "workspace")
+        ),
+        Error::TotalPaneLimit => format!(
+            "Neptune holds at most {} across its windows. Close some tabs or splits, or raise max_total_panes in the config.",
+            plural(limits.total_panes, "pane")
+        ),
+        Error::PaneLimit => format!(
+            "A workspace holds at most {}. Close some tabs or splits, or raise max_panes_per_workspace in the config.",
+            plural(limits.panes_per_workspace, "pane")
+        ),
+        Error::WindowLimit => format!(
+            "Neptune holds at most {}. Move a workspace back into this window, or raise max_workspaces in the config.",
+            plural(limits.workspaces + 1, "window")
+        ),
+        Error::WorkspaceGroupLimit => format!(
+            "Neptune holds at most {}. Remove some, or raise max_workspaces in the config.",
+            plural(limits.workspaces, "workspace group")
+        ),
+        _ => error.to_string(),
+    }
+}
+
 /// A local pane runs the configured shell. A remote pane runs the SSH client
 /// in the same local directory and gets the login shell of its host. A remote
 /// starting directory is passed as data in the remote bootstrap command.
@@ -58,7 +93,9 @@ impl App {
         self.restore_workspace_project_edits(edits);
         match result {
             Ok(effects) => self.execute(ctx, effects),
-            Err(error) => self.ui.error = Some(error.to_string()),
+            Err(error) => {
+                self.ui.error = Some(limit_message(&error, self.controller.model().limits()));
+            }
         }
     }
     pub(super) fn sync_directory(

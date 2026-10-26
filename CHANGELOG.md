@@ -62,6 +62,11 @@ their preparation records remain in Git history.
   Ctrl+Shift+1–9, whose digits followed the keyboard layout.
 - **Duplicate** in a workspace's menu or the command palette opens
   another workspace in the folder the first one is working in, right below it.
+- The limits on open sessions are yours to set: `max_workspaces`,
+  `max_panes_per_workspace` and `max_total_panes` in the configuration, with
+  48 workspaces, 16 panes in one workspace and 128 panes across every window
+  by default.
+- Reaching a limit now says how many there may be and which setting to raise.
 
 ### Fixes
 

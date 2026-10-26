@@ -46,6 +46,12 @@ pub struct Config {
     /// Further saved browser profiles, each with cookies of its own.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub browser_profiles: Vec<BrowserProfile>,
+    /// Most workspaces held at once, each with its own sessions.
+    pub max_workspaces: usize,
+    /// Most panes in one workspace, its tabs and splits together.
+    pub max_panes_per_workspace: usize,
+    /// Most panes across every window, each with a session of its own.
+    pub max_total_panes: usize,
 }
 
 /// A saved browser profile the user made. Its cookies and site data are kept
@@ -179,11 +185,22 @@ impl Default for Config {
             release_channel: Default::default(),
             browser_profile: BrowserProfile::DEFAULT.into(),
             browser_profiles: Vec::new(),
+            max_workspaces: 48,
+            max_panes_per_workspace: 16,
+            max_total_panes: 128,
         }
     }
 }
 
 impl Config {
+    /// The resource limits the model enforces.
+    pub fn limits(&self) -> neptune_model::Limits {
+        neptune_model::Limits {
+            workspaces: self.max_workspaces,
+            panes_per_workspace: self.max_panes_per_workspace,
+            total_panes: self.max_total_panes,
+        }
+    }
     /// The saved profile a new browser tab keeps its cookies in, or none for
     /// a private one.
     pub fn browser_profile(&self) -> Option<String> {
@@ -315,6 +332,18 @@ impl Config {
         anyhow::ensure!(
             self.shell.is_some() || self.shell_args.is_empty(),
             "shell_args require a shell"
+        );
+        anyhow::ensure!(
+            (1..=512).contains(&self.max_workspaces),
+            "max_workspaces must be between 1 and 512"
+        );
+        anyhow::ensure!(
+            (1..=64).contains(&self.max_panes_per_workspace),
+            "max_panes_per_workspace must be between 1 and 64"
+        );
+        anyhow::ensure!(
+            (1..=1024).contains(&self.max_total_panes),
+            "max_total_panes must be between 1 and 1024"
         );
         Ok(())
     }
@@ -1039,6 +1068,31 @@ font_size = 15.0
         assert!(orphaned.validate().is_err());
     }
 
+    #[test]
+    fn resource_limits_have_defaults_and_bounds() {
+        let mut config = Config::default();
+        assert_eq!(config.limits().workspaces, 48);
+        assert_eq!(config.limits().panes_per_workspace, 16);
+        assert_eq!(config.limits().total_panes, 128);
+        assert!(config.validate().is_ok());
+        config.max_workspaces = 0;
+        assert!(config.validate().is_err());
+        config.max_workspaces = 48;
+        config.max_total_panes = 2000;
+        assert!(config.validate().is_err());
+        config.max_total_panes = 128;
+        assert!(config.validate().is_ok());
+    }
+    #[test]
+    fn saved_limits_load_from_the_file() {
+        let parsed: Config =
+            toml::from_str("max_workspaces = 60\nmax_total_panes = 200\n").unwrap();
+        assert_eq!(parsed.max_workspaces, 60);
+        assert_eq!(parsed.limits().workspaces, 60);
+        assert_eq!(parsed.limits().total_panes, 200);
+        // The limits the file leaves out keep their defaults.
+        assert_eq!(parsed.limits().panes_per_workspace, 16);
+    }
     #[test]
     fn config_round_trip() {
         let c = Config::default();

@@ -1,7 +1,7 @@
 use crate::{
-    Axis, Edge, Error, Layout, Lifecycle, Model, Pane, PaneId, PaneKind, Project, ProjectId,
-    ProjectKey, Remote, SidebarItem, SplitId, Window, WindowId, Workspace, WorkspaceGroup,
-    WorkspaceGroupId, WorkspaceId,
+    Axis, Edge, Error, Layout, Lifecycle, Limits, Model, Pane, PaneId, PaneKind, Project,
+    ProjectId, ProjectKey, Remote, SidebarItem, SplitId, Window, WindowId, Workspace,
+    WorkspaceGroup, WorkspaceGroupId, WorkspaceId,
 };
 use std::path::PathBuf;
 
@@ -314,6 +314,12 @@ impl Controller {
     }
     pub fn model(&self) -> &Model {
         &self.model
+    }
+    /// Replace the limits the model enforces, such as from the settings the
+    /// user chose. What already exists stays; the new limits bound what is
+    /// opened from here on.
+    pub fn set_limits(&mut self, limits: Limits) {
+        self.model.set_limits(limits);
     }
     pub fn generation(&self) -> u64 {
         self.generation

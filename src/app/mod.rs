@@ -41,7 +41,7 @@ use crate::{
     },
 };
 use eframe::egui::{self, Pos2, Rect, Stroke, Vec2, emath::GuiRounding as _};
-use neptune_model::{Command, Controller, Effect, Lifecycle, Limits, Model, PaneId, Remote};
+use neptune_model::{Command, Controller, Effect, Lifecycle, Model, PaneId, Remote};
 use std::{
     collections::BTreeMap,
     path::PathBuf,
@@ -200,7 +200,7 @@ impl App {
                     Err(error) => (Config::default(), Some(format!("{error:#}"))),
                 };
                 let report = if restore && config.restore_workspaces {
-                    load_state(&state, Limits::default())
+                    load_state(&state, config.limits())
                 } else {
                     LoadReport {
                         model: None,
@@ -585,6 +585,7 @@ impl App {
             self.ui.error = Some(errors.join("\n"));
         }
         self.controller = Controller::new(startup.report.model.unwrap_or_default());
+        self.controller.set_limits(self.config.limits());
         self.adopt_restored_host();
         let repaint = ctx.clone();
         match PersistenceWriter::new(

@@ -1,5 +1,5 @@
 use super::*;
-use neptune_model::WorkspaceId;
+use neptune_model::{Limits, WorkspaceId};
 
 pub(super) fn fixture(root: &std::path::Path) -> (App, mpsc::SyncSender<Startup>) {
     let (sender, receiver) = mpsc::sync_channel(1);
@@ -4738,4 +4738,42 @@ fn a_launchers_folder_without_a_related_session_goes_to_the_end() {
         folder_placement(controller.model(), std::path::Path::new("/opt/projects")),
         None
     );
+}
+
+#[test]
+fn the_configured_limits_reach_the_model() {
+    let root = tempfile::tempdir().unwrap();
+    let (mut app, _sender) = fixture(root.path());
+    let ctx = egui::Context::default();
+    let config = Config {
+        max_workspaces: 7,
+        ..app.config.clone()
+    };
+    app.complete_startup(&ctx, loaded(config, Model::default()));
+    assert_eq!(app.controller.model().limits().workspaces, 7);
+}
+
+#[test]
+fn the_workspace_limit_names_its_number() {
+    let root = tempfile::tempdir().unwrap();
+    let (mut app, _sender) = fixture(root.path());
+    let ctx = egui::Context::default();
+    let config = Config {
+        max_workspaces: 1,
+        ..app.config.clone()
+    };
+    app.complete_startup(&ctx, loaded(config, Model::default()));
+    // The startup workspace already holds the single slot.
+    app.dispatch(
+        &ctx,
+        Command::AddWorkspace {
+            cwd: root.path().into(),
+            name: "second".into(),
+            remote: None,
+            group: None,
+        },
+    );
+    let error = app.ui.error.clone().unwrap_or_default();
+    assert!(error.contains("at most 1 workspace"), "{error}");
+    assert!(error.contains("max_workspaces"), "{error}");
 }

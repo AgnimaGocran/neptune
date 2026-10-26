@@ -89,6 +89,14 @@ release_channel = "stable" # stable | beta
 # Native desktop banners for BEL/OSC notifications. Pane rings and history stay enabled.
 desktop_notifications = true
 
+# Resource limits: how many workspaces, panes per workspace, and panes across
+# every window Neptune holds at once. Every pane runs a session of its own.
+# max_workspaces accepts 1-512, max_panes_per_workspace 1-64, and
+# max_total_panes 1-1024. Windows are limited to one more than the workspaces.
+max_workspaces = 48
+max_panes_per_workspace = 16
+max_total_panes = 128
+
 # Override application shortcuts. Restart Neptune after editing this file.
 # Omitted actions keep their defaults; [] disables all shortcuts for an action.
 # Lists replace defaults, and may contain up to 8 chords per action.

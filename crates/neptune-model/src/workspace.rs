@@ -125,9 +125,9 @@ pub struct Limits {
 impl Default for Limits {
     fn default() -> Self {
         Self {
-            workspaces: 24,
+            workspaces: 48,
             panes_per_workspace: 16,
-            total_panes: 64,
+            total_panes: 128,
         }
     }
 }
@@ -643,6 +643,11 @@ impl Model {
     }
     pub fn limits(&self) -> Limits {
         self.limits
+    }
+    /// Replace the limits the model enforces. What already exists stays;
+    /// the new limits bound what is opened from here on.
+    pub fn set_limits(&mut self, limits: Limits) {
+        self.limits = limits;
     }
     pub fn pane(&self, id: PaneId) -> Option<&Pane> {
         self.workspaces

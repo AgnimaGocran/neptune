@@ -60,7 +60,7 @@ running processes. Other windows keep working. **Quit Neptune** in the palette
 quits all windows and checks every terminal. Closing the last visible window
 also quits Neptune. Quitting retains the organization for the next launch;
 closing a workspace or a window while others remain removes its workspaces from
-the saved organization. All windows share Neptune's session and resource limits.
+the saved organization. All windows share Neptune's session and resource limits: 48 workspaces, 16 panes in one workspace, and 128 panes across every window by default. `max_workspaces`, `max_panes_per_workspace` and `max_total_panes` in the configuration change them, and a limit that is reached says which one it was.
 
 With workspace restoration enabled, Neptune reopens the saved windows,
 workspaces, tabs and splits with fresh shells in their remembered directories.
@@ -377,7 +377,7 @@ neptune --help
 
 ## Preferences and themes
 
-[config.example.toml](../config.example.toml) documents the supported settings: 715 themes shared by the window and terminal, custom themes, window zoom, terminal font family, font size and line height, scrollback limit, shell executable and arguments, [custom keybindings](#custom-keybindings), cursor style/blink, sidebar width, workspace restoration, and the two independent close warnings. Window zoom is available in Preferences under Appearance; changes there or through zoom shortcuts are saved and restored on the next launch, including with workspace restoration disabled. Settings are validated; unknown keys are rejected. Workspace restoration restores directories, split positions, and focused panes, and launches fresh shell processes; a remote workspace opens new SSH connections to its host. Recognized coding agents can resume their provider-owned conversations through saved session references; arbitrary commands and process memory are never serialized.
+[config.example.toml](../config.example.toml) documents the supported settings: 715 themes shared by the window and terminal, custom themes, window zoom, terminal font family, font size and line height, scrollback limit, shell executable and arguments, [custom keybindings](#custom-keybindings), cursor style/blink, sidebar width, workspace restoration, the two independent close warnings, and the workspace and pane limits. Window zoom is available in Preferences under Appearance; changes there or through zoom shortcuts are saved and restored on the next launch, including with workspace restoration disabled. Settings are validated; unknown keys are rejected. Workspace restoration restores directories, split positions, and focused panes, and launches fresh shell processes; a remote workspace opens new SSH connections to its host. Recognized coding agents can resume their provider-owned conversations through saved session references; arbitrary commands and process memory are never serialized.
 
 Preferences → Shell lists the shells found on this computer, as Windows Terminal lists profiles. On Windows it offers Command Prompt, Windows PowerShell, PowerShell 7, WSL distributions, Git Bash, Visual Studio developer prompts and Windows Terminal profiles that have their own command line (such as the Anaconda prompts). On macOS and Linux it offers the shells in `/etc/shells` and common shells on `PATH` or in Homebrew. **System default** keeps the platform's own startup, including a login shell on macOS and Linux; **Custom…** takes any program. A new choice applies to new terminals.
 
