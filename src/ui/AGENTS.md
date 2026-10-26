@@ -16,7 +16,7 @@ what Enter activates. Give icon-only controls matching tooltips and accessible
 names; expose stable pane/field labels for inspection. Narrow windows need
 contained, scrollable overlays with reachable close/actions, not clipped forms.
 
-For control/helper logic, select the affected test in `chrome.rs` or `helpers.rs`:
+For control/helper logic, select the affected test in `chrome/tests.rs` or `helpers.rs`:
 
 ```sh
 cargo test -p neptune-terminal --lib ui:: --locked

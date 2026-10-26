@@ -1133,9 +1133,7 @@ fn sandbox_unavailable(host: &std::path::Path) -> bool {
 /// their graphics and NSS setup.
 #[cfg(target_os = "linux")]
 fn bundled_libraries(host: &std::path::Path) -> Option<std::ffi::OsString> {
-    if crate::platform::host_env::bundle_beside_executable().is_none() {
-        return None;
-    }
+    crate::platform::host_env::bundle_beside_executable()?;
     // `usr/lib`, three levels above `usr/lib/neptune/browser/neptune-browser`.
     let bundled = host.ancestors().nth(3)?;
     // glibc's loader lists what it would load, and what it cannot find, without
