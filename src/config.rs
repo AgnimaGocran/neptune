@@ -175,6 +175,18 @@ pub enum Renderer {
     Software,
 }
 
+impl Renderer {
+    pub const ALL: [Self; 3] = [Self::Gpu, Self::LowPower, Self::Software];
+    /// What menus call the choice.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Gpu => "GPU",
+            Self::LowPower => "Low power",
+            Self::Software => "Software",
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {

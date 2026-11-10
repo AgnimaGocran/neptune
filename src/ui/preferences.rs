@@ -7,7 +7,7 @@ use super::helpers::{
 };
 use super::theme_browser::{self, search_field};
 use crate::{
-    config::{Config, Cursor},
+    config::{Config, Cursor, Renderer},
     icons::{self, Icon},
     platform::fonts::{DEFAULT_FAMILY, Fonts},
     platform::shells::{Detection, Shell},
@@ -172,12 +172,13 @@ enum Setting {
     CheckUpdates,
     ReleaseChannel,
     ShowTabMemory,
+    Graphics,
     Version,
 }
 
 /// Each setting with its pane, its label and the other words people use for
 /// it. A search reads the pane's name and the label as well as these.
-const INDEX: [(Setting, Pane, &str, &str); 20] = [
+const INDEX: [(Setting, Pane, &str, &str); 21] = [
     (
         Setting::FileEditor,
         Pane::General,
@@ -297,6 +298,12 @@ const INDEX: [(Setting, Pane, &str, &str); 20] = [
         Pane::Text,
         "Show memory in tabs",
         "memory ram usage resident process tab title bytes megabytes resource",
+    ),
+    (
+        Setting::Graphics,
+        Pane::General,
+        "Graphics",
+        "renderer graphics gpu software rendering low power integrated video memory card adapter",
     ),
 ];
 
@@ -732,7 +739,7 @@ fn general(
     editors: &mut crate::platform::editor::Detection,
     actions: &mut Vec<Action>,
 ) {
-    use Setting::{ConfirmClose, Keybindings, Reset, RestoreWorkspaces, WarnProcesses};
+    use Setting::{ConfirmClose, Graphics, Keybindings, Reset, RestoreWorkspaces, WarnProcesses};
     let pane = Pane::General;
     card(
         ui,
@@ -789,6 +796,36 @@ fn general(
                 );
             });
             rows.note(ui, "Reopens folders and layouts with fresh shells.");
+        },
+    );
+    card(
+        ui,
+        p,
+        shown,
+        pane,
+        "Rendering",
+        &[Graphics],
+        |ui, rows| {
+            if shown.has(Graphics) {
+                rows.row(ui, "Graphics", |ui| {
+                    segmented(
+                        ui,
+                        p,
+                        "renderer",
+                        &mut config.renderer,
+                        &[
+                            (Renderer::Gpu, Renderer::Gpu.label()),
+                            (Renderer::LowPower, Renderer::LowPower.label()),
+                            (Renderer::Software, Renderer::Software.label()),
+                        ],
+                        300.0,
+                    );
+                });
+                rows.note(
+                    ui,
+                    "Software renders on the processor and holds no video memory; low power prefers the integrated card. The adapter is chosen when the window opens, so the choice applies on the next launch.",
+                );
+            }
         },
     );
     card(
