@@ -71,6 +71,10 @@ their preparation records remain in Git history.
   title: Preferences → Text → Tabs, or `show_tab_memory` in the configuration.
   The reading is measured every few seconds off the frame, and covers the
   shell and everything it started.
+- The window can render on the processor instead of the video card:
+  `renderer = "software"` holds no video memory at all, and
+  `renderer = "low-power"` prefers the integrated adapter and leaves a
+  discrete card free. The adapter is chosen when the window is created.
 
 ### Fixes
 

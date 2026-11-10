@@ -185,9 +185,18 @@ fn main() -> anyhow::Result<()> {
         window.state.inner_size = size;
         window.state.maximized = false;
     }
+    // The renderer is chosen before the window exists: the configuration says
+    // which adapter to ask for.
+    let config_path = launch
+        .config
+        .clone()
+        .unwrap_or_else(|| launch.data_root.clone().unwrap_or_default().join("config.toml"));
+    let renderer = config::Config::load(&config_path)
+        .map(|config| config.renderer)
+        .unwrap_or_default();
     eframe::run_native(
         "Neptune",
-        native_options(&window.state, native_icon()?),
+        native_options(&window.state, native_icon()?, renderer),
         Box::new(move |cc| {
             #[cfg(unix)]
             if let Some(parked) = &parked_context {
@@ -202,8 +211,9 @@ fn main() -> anyhow::Result<()> {
 fn native_options(
     window: &window_state::WindowState,
     icon: eframe::egui::IconData,
+    renderer: config::Renderer,
 ) -> eframe::NativeOptions {
-    eframe::NativeOptions {
+    let mut options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title("Neptune")
             .with_app_id("rs.neptune.terminal")
@@ -231,6 +241,49 @@ fn native_options(
             },
         ),
         ..Default::default()
+    };
+    if let Some(setup) = wgpu_setup(renderer) {
+        options.wgpu_options.wgpu_setup = setup;
+    }
+    options
+}
+
+/// The adapter setup a renderer choice asks for, when it differs from the
+/// default.
+///
+/// `software` renders on the processor: the window holds no video memory, at
+/// the cost of the processor drawing every pixel.
+fn wgpu_setup(renderer: config::Renderer) -> Option<eframe::egui_wgpu::WgpuSetup> {
+    use eframe::egui_wgpu::{WgpuSetup, WgpuSetupCreateNew};
+    match renderer {
+        config::Renderer::Gpu => None,
+        config::Renderer::LowPower => Some(WgpuSetup::CreateNew(WgpuSetupCreateNew {
+            power_preference: eframe::wgpu::PowerPreference::LowPower,
+            ..WgpuSetupCreateNew::without_display_handle()
+        })),
+        config::Renderer::Software => Some(WgpuSetup::CreateNew(WgpuSetupCreateNew {
+            // Both software drivers are offered: llvmpipe through OpenGL and
+            // lavapipe through Vulkan.
+            instance_descriptor: {
+                let mut descriptor = eframe::wgpu::InstanceDescriptor::new_without_display_handle();
+                descriptor.backends =
+                    eframe::wgpu::Backends::GL | eframe::wgpu::Backends::VULKAN;
+                descriptor
+            },
+            native_adapter_selector: Some(std::sync::Arc::new(
+                |adapters: &[eframe::wgpu::Adapter], _| {
+                    adapters
+                        .iter()
+                        .find(|adapter| {
+                            adapter.get_info().device_type == eframe::wgpu::DeviceType::Cpu
+                        })
+                        .or_else(|| adapters.first())
+                        .cloned()
+                        .ok_or_else(|| "no adapter to render with".to_string())
+                },
+            )),
+            ..WgpuSetupCreateNew::without_display_handle()
+        })),
     }
 }
 
@@ -255,12 +308,32 @@ mod tests {
         let options = native_options(
             &window_state::WindowState::default(),
             native_icon().expect("bundled icon decodes"),
+            config::Renderer::Gpu,
         );
         assert_eq!(
             options.viewport.transparent,
             Some(!cfg!(target_os = "windows"))
         );
         assert_eq!(options.viewport.decorations, Some(false));
+    }
+
+    #[test]
+    fn the_renderer_choice_picks_the_adapter_it_names() {
+        assert!(wgpu_setup(config::Renderer::Gpu).is_none());
+        let low = wgpu_setup(config::Renderer::LowPower).expect("a setup");
+        let eframe::egui_wgpu::WgpuSetup::CreateNew(low) = low else {
+            panic!("a new setup");
+        };
+        assert_eq!(
+            low.power_preference,
+            eframe::wgpu::PowerPreference::LowPower
+        );
+        let software = wgpu_setup(config::Renderer::Software).expect("a setup");
+        let eframe::egui_wgpu::WgpuSetup::CreateNew(software) = software else {
+            panic!("a new setup");
+        };
+        assert!(software.native_adapter_selector.is_some());
+        assert!(software.instance_descriptor.backends.contains(eframe::wgpu::Backends::GL));
     }
 
     #[test]

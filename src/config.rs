@@ -54,6 +54,8 @@ pub struct Config {
     pub max_total_panes: usize,
     /// Show the memory a tab's process tree holds beside its title.
     pub show_tab_memory: bool,
+    /// Which adapter the window renders with.
+    pub renderer: Renderer,
 }
 
 /// A saved browser profile the user made. Its cookies and site data are kept
@@ -151,13 +153,26 @@ impl Accent {
     ];
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Cursor {
     #[default]
     Block,
     Beam,
     Underline,
+}
+
+/// Which adapter the window renders with.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Renderer {
+    /// The adapter the system prefers.
+    #[default]
+    Gpu,
+    /// Prefer the integrated adapter, which leaves a discrete card free.
+    LowPower,
+    /// Render on the processor: no video memory is held at all.
+    Software,
 }
 
 impl Default for Config {
@@ -191,6 +206,7 @@ impl Default for Config {
             max_panes_per_workspace: 16,
             max_total_panes: 128,
             show_tab_memory: false,
+            renderer: Renderer::Gpu,
         }
     }
 }

@@ -102,6 +102,13 @@ max_total_panes = 128
 # Preferences -> Text -> Tabs turns it on and off.
 show_tab_memory = false
 
+# Which adapter the window renders with. "gpu" is the usual choice.
+# "low-power" prefers the integrated adapter and leaves a discrete card free.
+# "software" renders on the processor and holds no video memory at all, at
+# the cost of the processor drawing every pixel. The choice is made when the
+# window is created, so it takes effect on the next launch.
+renderer = "gpu"
+
 # Override application shortcuts. Restart Neptune after editing this file.
 # Omitted actions keep their defaults; [] disables all shortcuts for an action.
 # Lists replace defaults, and may contain up to 8 chords per action.
