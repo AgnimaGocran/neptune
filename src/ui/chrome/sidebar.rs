@@ -126,65 +126,52 @@ pub fn sidebar(
     );
     workspace_detach(ui, rect, view, state, actions);
 
-    // Footer: the primary creation action, with preferences beside it.
-    let create = Rect::from_min_max(
-        Pos2::new(rect.left() + 8.0, footer_top + 8.0),
-        Pos2::new(rect.right() - 44.0, footer_top + 38.0),
-    );
-    let response = ui.interact(create, ui.id().with("workspace-create"), Sense::click());
-    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, "New workspace"));
-    let painter = ui.painter();
-    if response.is_pointer_button_down_on() {
-        painter.rect_filled(create, metrics::ROW_RADIUS, p.pressed);
-    } else if response.hovered() {
-        painter.rect_filled(create, metrics::ROW_RADIUS, p.hover);
-    }
-    if response.has_focus() {
-        painter.rect_stroke(
-            create,
-            metrics::ROW_RADIUS,
-            Stroke::new(1.5, p.accent),
-            egui::StrokeKind::Inside,
-        );
-    }
-    let ink = if response.hovered() {
-        p.fg
-    } else {
-        p.secondary
-    };
-    icons::paint(
-        painter,
-        Rect::from_center_size(
-            Pos2::new(create.left() + 15.0, create.center().y),
-            Vec2::splat(14.0),
-        ),
+    // Footer: three ways to start something, with preferences beside them.
+    let center_y = footer_top + 23.0;
+    let mut x = rect.left() + 22.0;
+    if icon_at(
+        ui,
+        Pos2::new(x, center_y),
         Icon::Plus,
-        ink,
-    );
-    galley_at(
-        painter,
-        Pos2::new(create.left() + 31.0, create.center().y),
-        elided(
-            painter,
-            "New workspace",
-            theme::medium(12.5),
-            ink,
-            create.width() - 36.0,
-        ),
-    );
-    if response
-        .on_hover_cursor(CursorIcon::PointingHand)
-        .on_hover_text(format!(
-            "New workspace   {}",
-            view.keybindings.hint(Binding::NewWorkspace)
-        ))
-        .clicked()
+        "New workspace",
+        &view.keybindings.hint(Binding::NewWorkspace),
+        "sidebar-new-workspace",
+    )
+    .clicked()
     {
         actions.push(Action::New);
     }
+    x += 34.0;
     if icon_at(
         ui,
-        Pos2::new(rect.right() - 24.0, create.center().y),
+        Pos2::new(x, center_y),
+        Icon::Folder,
+        "New workspace group",
+        "",
+        "sidebar-new-group",
+    )
+    .clicked()
+    {
+        actions.push(Action::NewGroup);
+    }
+    badge(ui, Pos2::new(x + 9.0, center_y + 9.0), p);
+    x += 34.0;
+    if icon_at(
+        ui,
+        Pos2::new(x, center_y),
+        Icon::Globe,
+        "New SSH workspace",
+        "",
+        "sidebar-new-ssh",
+    )
+    .clicked()
+    {
+        actions.push(Action::Ssh(None));
+    }
+    badge(ui, Pos2::new(x + 9.0, center_y + 9.0), p);
+    if icon_at(
+        ui,
+        Pos2::new(rect.right() - 24.0, center_y),
         Icon::Settings,
         "Preferences",
         &view.keybindings.hint(Binding::Preferences),
@@ -252,3 +239,16 @@ pub fn sidebar(
 }
 
 
+
+/// A small plus in the corner of a footer button: the group and the SSH
+/// button carry one, so it is clear that they create something.
+fn badge(ui: &egui::Ui, center: Pos2, p: Palette) {
+    let painter = ui.painter();
+    painter.circle_filled(center, 6.0, p.chrome);
+    icons::paint(
+        painter,
+        Rect::from_center_size(center, Vec2::splat(9.0)),
+        Icon::Plus,
+        p.fg,
+    );
+}
