@@ -63,7 +63,10 @@ closing a workspace or a window while others remain removes its workspaces from
 the saved organization. All windows share Neptune's session and resource limits: 48 workspaces, 16 panes in one workspace, and 128 panes across every window by default. `max_workspaces`, `max_panes_per_workspace` and `max_total_panes` in the configuration change them, and a limit that is reached says which one it was. Preferences → Text → Tabs shows the memory a terminal's process tree holds beside its tab title, measured every few seconds; `show_tab_memory` in the configuration turns it on and off. The window can also render on the processor instead of the video card: `renderer = "software"` in the configuration holds no video memory at all, and `renderer = "low-power"` prefers the integrated adapter and leaves a discrete card free. The adapter is chosen when the window is created, so the choice takes effect on the next launch.
 
 With workspace restoration enabled, Neptune reopens the saved windows,
-workspaces, tabs and splits with fresh shells in their remembered directories.
+workspaces, tabs and splits, and each terminal opens a fresh shell in its
+remembered directory when its tab is first shown; nothing else starts at
+launch, so a saved session with many workspaces does not load every shell at
+once.
 Live processes and terminal contents are not restored. Settings and themes are
 shared by every window. See [storage and restoration](#storage-and-restoration).
 

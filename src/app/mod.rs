@@ -1138,6 +1138,17 @@ impl eframe::App for App {
         );
         self.poll(ctx);
         self.note_activity();
+        // A restored pane starts the first time it is the one in view.
+        if let Some(pane) = self.controller.model().active_pane()
+            && self.sessions.get(pane).is_none()
+            && self
+                .controller
+                .model()
+                .pane(pane)
+                .is_some_and(|item| matches!(item.lifecycle(), Lifecycle::Starting))
+        {
+            self.dispatch(ctx, Command::StartPane { pane });
+        }
         if ctx.input(|i| i.viewport().close_requested()) && !self.exit_approved {
             window::send(ctx, WindowOperation::CancelClose);
             self.relaunch = false;

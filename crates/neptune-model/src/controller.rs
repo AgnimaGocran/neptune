@@ -3,6 +3,7 @@ use crate::{
     ProjectId, ProjectKey, Remote, SidebarItem, SplitId, Window, WindowId, Workspace,
     WorkspaceGroup, WorkspaceGroupId, WorkspaceId,
 };
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 /// Where a moved pane lands. The pane keeps its session and identity, so it
@@ -99,6 +100,10 @@ pub enum Command {
     SetWorkspaceCommand {
         workspace: WorkspaceId,
         command: String,
+    },
+    /// Starts a restored pane the first time it is opened.
+    StartPane {
+        pane: PaneId,
     },
     /// Takes the sidebar's top-level rows in the given order: one of each,
     /// nothing unknown. Pinned rows stay at the top.
@@ -367,32 +372,54 @@ impl Controller {
         self.saved_generation < self.generation
     }
 
-    /// Restoration can populate panes immediately before bounded workers start
-    /// their shells. It does not serialize or touch a filesystem.
+    /// Only the pane each window shows starts at launch. Every other restored
+    /// pane stays unstarted until it is opened, and then starts through
+    /// `Command::StartPane`.
     pub fn start_effects(&self) -> Vec<Effect> {
-        self.model
-            .workspaces
-            .iter()
-            .flat_map(|workspace| {
-                workspace.panes.iter().map(|pane| {
-                    if pane.kind == PaneKind::Browser {
-                        Effect::StartBrowser {
-                            pane: pane.id,
-                            generation: pane.generation,
-                        }
-                    } else {
-                        Effect::StartSession {
-                            pane: pane.id,
-                            generation: pane.generation,
-                            cwd: pane.cwd.clone(),
-                            remote: workspace.remote.clone(),
-                            remote_cwd: pane.remote_cwd.clone(),
-                            replacement: false,
-                        }
-                    }
+        let mut effects = Vec::new();
+        let mut started = HashSet::new();
+        for window in &self.model.windows {
+            let Some(workspace) = window
+                .active
+                .or_else(|| {
+                    self.model
+                        .workspaces
+                        .iter()
+                        .find(|workspace| workspace.window == window.id)
+                        .map(Workspace::id)
                 })
-            })
-            .collect()
+                .and_then(|id| self.model.workspace(id))
+            else {
+                continue;
+            };
+            let pane = workspace.active;
+            if !started.insert(pane) {
+                continue;
+            }
+            if let Some(effect) = self.start_effect(workspace, pane) {
+                effects.push(effect);
+            }
+        }
+        effects
+    }
+
+    fn start_effect(&self, workspace: &Workspace, pane: PaneId) -> Option<Effect> {
+        let pane = workspace.pane(pane)?;
+        Some(if pane.kind == PaneKind::Browser {
+            Effect::StartBrowser {
+                pane: pane.id,
+                generation: pane.generation,
+            }
+        } else {
+            Effect::StartSession {
+                pane: pane.id,
+                generation: pane.generation,
+                cwd: pane.cwd.clone(),
+                remote: workspace.remote.clone(),
+                remote_cwd: pane.remote_cwd.clone(),
+                replacement: false,
+            }
+        })
     }
 
     pub fn complete(&mut self, completion: Completion) -> Result<Vec<Effect>, Error> {
@@ -821,6 +848,22 @@ impl Controller {
                 if current.command() != command {
                     self.model.workspace_mut(workspace)?.command = command;
                     dirty = true;
+                }
+            }
+            Command::StartPane { pane } => {
+                let owner = self
+                    .model
+                    .workspace_for_pane(pane)
+                    .ok_or(Error::UnknownPane(pane))?;
+                let item = self.model.pane(pane).ok_or(Error::UnknownPane(pane))?;
+                if matches!(item.lifecycle(), Lifecycle::Starting) {
+                    let workspace = self
+                        .model
+                        .workspace(owner)
+                        .ok_or(Error::UnknownWorkspace(owner))?;
+                    if let Some(effect) = self.start_effect(workspace, pane) {
+                        effects.push(effect);
+                    }
                 }
             }
             Command::ReorderSidebar(order) => {
@@ -2011,7 +2054,7 @@ mod tests {
             Limits::default(),
         )
         .unwrap();
-        let starts = Controller::new(restored).start_effects();
+        let starts = start_every_pane(&mut Controller::new(restored));
         assert!(starts.contains(&Effect::StartBrowser {
             pane: browser,
             generation: 1
@@ -2251,6 +2294,34 @@ mod tests {
         assert_eq!(
             controller.model().sidebar_order(),
             [SidebarItem::Folder(folder)]
+        );
+    }
+
+    #[test]
+    fn only_the_pane_in_view_starts_at_launch() {
+        let mut controller = Controller::new(Model::default());
+        let first = create_in(&mut controller, "one", "/one");
+        let second = create_in(&mut controller, "two", "/two");
+        controller
+            .dispatch(Command::SelectWorkspace(first))
+            .unwrap();
+        let effects = controller.start_effects();
+        assert_eq!(effects.len(), 1, "only the pane in view starts");
+        let Effect::StartSession { pane, .. } = effects[0] else {
+            panic!("a terminal starts first");
+        };
+        assert_eq!(
+            Some(pane),
+            controller.model().workspace(first).map(Workspace::active)
+        );
+        let hidden = controller.model().workspace(second).unwrap().active();
+        assert_ne!(pane, hidden);
+        // Opening the other workspace starts its pane then.
+        let effects = controller
+            .dispatch(Command::StartPane { pane: hidden })
+            .unwrap();
+        assert!(
+            matches!(effects.as_slice(), [Effect::StartSession { pane, .. }] if *pane == hidden)
         );
     }
 
@@ -3554,6 +3625,40 @@ mod tests {
     fn remote(destination: &str) -> Option<Remote> {
         Some(Remote::parse(destination).unwrap())
     }
+    /// What opening each pane in turn would start: `start_effects` covers the
+    /// pane in view, and the rest start on demand.
+    fn start_every_pane(controller: &mut Controller) -> Vec<Effect> {
+        let mut effects = controller.start_effects();
+        let panes: Vec<PaneId> = controller
+            .model()
+            .workspaces()
+            .iter()
+            .flat_map(|workspace| workspace.panes())
+            .map(|pane| pane.id())
+            .collect();
+        for pane in panes {
+            let started = effects.iter().any(|effect| match effect {
+                Effect::StartSession { pane: id, .. } | Effect::StartBrowser { pane: id, .. } => {
+                    *id == pane
+                }
+                _ => false,
+            });
+            if !started {
+                effects.extend(controller.dispatch(Command::StartPane { pane }).unwrap());
+            }
+        }
+        // Report in pane order, as a launch would have.
+        let mut by_pane = std::collections::BTreeMap::new();
+        for effect in effects {
+            let pane = match &effect {
+                Effect::StartSession { pane, .. } | Effect::StartBrowser { pane, .. } => *pane,
+                _ => continue,
+            };
+            by_pane.entry(pane).or_insert(effect);
+        }
+        by_pane.into_values().collect()
+    }
+
     fn starts(effects: &[Effect]) -> Vec<(PaneId, u64, Option<Remote>, bool)> {
         effects
             .iter()
@@ -3607,7 +3712,7 @@ mod tests {
             .unwrap();
         let restarted = controller.dispatch(Command::RestartPane(first)).unwrap();
         assert!(restarted.iter().any(|effect| matches!(effect, Effect::StartSession { pane, remote_cwd: Some(cwd), .. } if *pane == first && *cwd == directory)));
-        let restored = Controller::new(
+        let mut restored = Controller::new(
             Model::restore(
                 controller.model().specs(),
                 Some(workspace),
@@ -3616,8 +3721,7 @@ mod tests {
             )
             .unwrap(),
         );
-        let directories: Vec<_> = restored
-            .start_effects()
+        let directories: Vec<_> = start_every_pane(&mut restored)
             .into_iter()
             .filter_map(|effect| match effect {
                 Effect::StartSession { remote_cwd, .. } => remote_cwd,
@@ -3735,7 +3839,7 @@ mod tests {
 
         // A local neighbour is unaffected, and restoration reconnects.
         create(&mut controller, "local");
-        let restored = Controller::new(
+        let mut restored = Controller::new(
             Model::restore(
                 controller.model().specs(),
                 None,
@@ -3744,7 +3848,7 @@ mod tests {
             )
             .unwrap(),
         );
-        let remotes: Vec<_> = starts(&restored.start_effects())
+        let remotes: Vec<_> = starts(&start_every_pane(&mut restored))
             .into_iter()
             .map(|(_, _, remote, _)| remote)
             .collect();
