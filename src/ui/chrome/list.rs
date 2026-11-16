@@ -1,6 +1,6 @@
 //! The sidebar list itself: the ordered items and where a drop lands.
+use super::rows::{pinned_header, sidebar_item};
 use super::*;
-use super::rows::sidebar_item;
 
 #[expect(
     clippy::too_many_arguments,
@@ -41,6 +41,7 @@ pub(super) fn workspace_list(
     let spacing = GROUP_GAP;
     let trailing_gap = items.last().map_or(0.0, |item| match item {
         SidebarItem::Workspace(_) => ROW_STEP - ROW_HEIGHT,
+        SidebarItem::Folder(_) => spacing,
         SidebarItem::Group(_) => spacing,
     });
     let heights: Vec<_> = items
@@ -60,11 +61,29 @@ pub(super) fn workspace_list(
                                 let count = view
                                     .workspaces
                                     .iter()
-                                    .filter(|w| w.group == Some(*id))
+                                    .filter(|w| w.group == Some(*id) && !w.pinned)
                                     .count();
                                 GROUP_HEIGHT
                                     + spacing
                                     + if group.collapsed() {
+                                        0.0
+                                    } else {
+                                        spacing + (count as f32 * ROW_STEP - 2.0).max(28.0)
+                                    }
+                            }),
+                        SidebarItem::Folder(id) => view
+                            .folders
+                            .iter()
+                            .find(|f| f.folder.id() == *id)
+                            .map_or(GROUP_HEIGHT + spacing, |folder| {
+                                let count = view
+                                    .workspaces
+                                    .iter()
+                                    .filter(|w| w.folder == Some(*id))
+                                    .count();
+                                GROUP_HEIGHT
+                                    + spacing
+                                    + if folder.folder.collapsed() {
                                         0.0
                                     } else {
                                         spacing + (count as f32 * ROW_STEP - 2.0).max(28.0)
@@ -75,6 +94,21 @@ pub(super) fn workspace_list(
                 )
         })
         .collect();
+    // Pinned rows stand under a heading of their own, with controls that
+    // order them apart from the rest of the list.
+    let pinned = items
+        .iter()
+        .take_while(|item| match item {
+            SidebarItem::Workspace(id) => view
+                .workspaces
+                .iter()
+                .any(|workspace| workspace.id == *id && workspace.pinned),
+            _ => false,
+        })
+        .count();
+    if pinned > 0 {
+        pinned_header(ui, p, actions);
+    }
     if origin.is_none() {
         let list_top = ui.cursor().min;
         let mut next = 0.0;
@@ -104,7 +138,9 @@ pub(super) fn workspace_list(
             ) {
                 let height = match item {
                     SidebarItem::Workspace(_) => ROW_STEP,
-                    SidebarItem::Group(_) => child.min_rect().height() + spacing,
+                    SidebarItem::Group(_) | SidebarItem::Folder(_) => {
+                        child.min_rect().height() + spacing
+                    }
                 };
                 positions.push((item, next, height));
                 next += height;
@@ -143,6 +179,7 @@ pub(super) fn workspace_list(
                     - list.top()
                     - match items[origin] {
                         SidebarItem::Workspace(_) => ROW_HEIGHT,
+                        SidebarItem::Folder(_) => GROUP_HEIGHT,
                         SidebarItem::Group(_) => GROUP_HEIGHT,
                     },
             )
@@ -228,6 +265,7 @@ pub(super) fn workspace_list(
                 list.width(),
                 match item {
                     SidebarItem::Workspace(_) => ROW_HEIGHT,
+                    SidebarItem::Folder(_) => heights[index] - spacing,
                     SidebarItem::Group(_) => heights[index] - spacing,
                 },
             ),
@@ -243,7 +281,7 @@ pub(super) fn workspace_list(
             Some(index) == origin,
             0.12,
         );
-        if lift > 0.0 && matches!(item, SidebarItem::Group(_)) {
+        if lift > 0.0 && matches!(item, SidebarItem::Group(_) | SidebarItem::Folder(_)) {
             let painter = child
                 .painter()
                 .with_clip_rect(ui.clip_rect().expand2(vec2(8.0, 12.0)));
@@ -282,7 +320,7 @@ pub(super) fn workspace_list(
         );
         let height = match item {
             SidebarItem::Workspace(_) => ROW_STEP,
-            SidebarItem::Group(_) => child.min_rect().height() + spacing,
+            SidebarItem::Group(_) | SidebarItem::Folder(_) => child.min_rect().height() + spacing,
         };
         positions.push((item, top, height));
         let Some(response) = response else {
@@ -330,5 +368,3 @@ pub(super) fn workspace_list(
     }
     drag.positions = positions;
 }
-
-

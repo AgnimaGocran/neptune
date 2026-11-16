@@ -15,7 +15,8 @@ mod worktree;
 pub use agent::{AgentKind, AgentSession, Attachment, Conversation, PullRequest};
 pub use controller::{Command, Completion, Controller, Destination, Effect};
 pub use ids::{
-    PaneId, ProjectId, SessionGeneration, SplitId, WindowId, WorkspaceGroupId, WorkspaceId,
+    FolderId, PaneId, ProjectId, SessionGeneration, SplitId, WindowId, WorkspaceGroupId,
+    WorkspaceId,
 };
 pub use layout::{Axis, Edge, FocusDirection, Layout};
 pub use project::{Project, ProjectKey, ProjectSpec};
@@ -24,5 +25,5 @@ pub use window::{Window, WindowSpec};
 pub use workspace::{
     Error, Lifecycle, Limits, Model, Pane, PaneKind, PaneSpec, Workspace, WorkspaceSpec,
 };
-pub use workspace::{SidebarItem, WorkspaceGroup, WorkspaceGroupSpec};
+pub use workspace::{Folder, FolderSpec, SidebarItem, WorkspaceGroup, WorkspaceGroupSpec};
 pub use worktree::Worktree;

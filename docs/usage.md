@@ -73,6 +73,20 @@ Secondary-click the **Workspaces** heading or empty sidebar space for **New work
 
 Use **Move to group** in a workspace's menu to organize existing workspaces, or choose **Ungrouped** to move one out. Workspaces can be reordered within their group by dragging or with **Move up** and **Move down**. Drag a group by its folder row to place it at the top, between ungrouped workspaces, or beside another group; its workspaces move with it. Ungrouped workspace rows can also be dragged around groups. Escape cancels the drag, and the new order is saved on release. Group commands are also available in the palette. Collapsing or removing a group keeps its shells running; removing it leaves its workspaces ungrouped in the folder's former position. Names, membership, empty groups, mixed sidebar order, and collapsed state are saved with the workspace organization. Groups do not nest.
 
+## Folder branches
+
+Workspaces started in the same directory are gathered under one row for it. The row shows the directory and the branch checked out in it, and the workspaces that start there sit beneath it with their own rows. Click the row to close or open the branch; the closed state is saved with the rest of the sidebar. A directory with a single workspace keeps a plain row instead, so the branch appears when a second workspace starts there and leaves with it.
+
+The branch follows where a workspace starts, not where its terminal has moved to since: a workspace that starts elsewhere, or that belongs to a group, keeps a row of its own. Dragging the branch row moves the workspaces it holds together; escape cancels the drag and the new order is saved on release.
+
+## Pinned workspaces and sidebar order
+
+Secondary-click a workspace and choose **Pin to top** to keep its row above everything else, in a row of its own apart from its group or folder; **Unpin** lets it return to where its group or folder stands. Several workspaces can be pinned, and the pins are saved with the sidebar.
+
+Pinned rows stand under a **Pinned** heading whose two small buttons order them by name or by last update; the same two buttons beside the sidebar toggle order the rest of the list. Sorting happens when a button is pressed and does not repeat on its own: **Sort by name** arranges rows A to Z, and **Sort by last update** puts the workspace whose terminal wrote most recently first and the ones that have been quiet longest last. Groups and folder branches sort by their own name or by their most recently written workspace. The new order is saved like any other sidebar order.
+
+Secondary-click a workspace and choose **Set command…** to name its row by one command line: the row then shows that command instead of the workspace name, and its small ▶ button runs it again in that terminal. Saving an empty field brings the workspace name back. Duplicating a workspace copies its command; nothing typed into a terminal is read for this.
+
 Choose **Default directory…** from a group's context menu to set the starting
 folder for new local workspaces created in that group. Enter an absolute local
 path or `~/folder`, or use **Browse…** to choose a folder in the native file

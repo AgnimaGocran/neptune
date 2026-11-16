@@ -52,6 +52,8 @@ pub struct Config {
     pub max_panes_per_workspace: usize,
     /// Most panes across every window, each with a session of its own.
     pub max_total_panes: usize,
+    /// Most workspaces kept pinned at the top of the sidebar.
+    pub max_pinned: usize,
     /// Show the memory a tab's process tree holds beside its title.
     pub show_tab_memory: bool,
     /// Which adapter the window renders with.
@@ -217,6 +219,7 @@ impl Default for Config {
             max_workspaces: 48,
             max_panes_per_workspace: 16,
             max_total_panes: 128,
+            max_pinned: 5,
             show_tab_memory: false,
             renderer: Renderer::Gpu,
         }
@@ -368,6 +371,7 @@ impl Config {
             (1..=512).contains(&self.max_workspaces),
             "max_workspaces must be between 1 and 512"
         );
+        anyhow::ensure!(self.max_pinned <= 64, "max_pinned must be at most 64");
         anyhow::ensure!(
             (1..=64).contains(&self.max_panes_per_workspace),
             "max_panes_per_workspace must be between 1 and 64"

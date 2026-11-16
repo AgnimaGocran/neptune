@@ -28,6 +28,7 @@ macro_rules! identity {
 identity!(PaneId);
 identity!(WorkspaceId);
 identity!(WorkspaceGroupId);
+identity!(FolderId);
 identity!(SplitId);
 identity!(SessionGeneration);
 identity!(ProjectId);

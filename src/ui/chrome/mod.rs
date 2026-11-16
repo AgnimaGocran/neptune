@@ -2,7 +2,7 @@
 use super::helpers::{
     self, animate, elided, galley_at, keycaps, menu_item, menu_layout, menu_separator, menu_submenu,
 };
-use super::{Action, UiState, WorkspaceView};
+use super::{Action, FolderView, SidebarSort, UiState, WorkspaceView};
 use crate::keybindings::{BindingAction as Binding, Keybindings};
 use crate::{
     icons::{self, Icon},
@@ -18,12 +18,12 @@ use neptune_model::{
     Destination, PaneId, SidebarItem, WindowId, WorkspaceGroup, WorkspaceGroupId, WorkspaceId,
 };
 
-
 /// What the chrome needs to know about the frame it surrounds.
 pub struct ChromeView<'a> {
     pub keybindings: &'a Keybindings,
     pub workspaces: &'a [WorkspaceView],
     pub groups: &'a [WorkspaceGroup],
+    pub folders: &'a [FolderView],
     pub sidebar_order: &'a [SidebarItem],
     /// Other open windows, with their current workspace names for destinations.
     pub windows: &'a [(WindowId, String)],
@@ -63,7 +63,6 @@ pub struct ChromeView<'a> {
     pub panel_attention: bool,
 }
 
-
 const SIDEBAR_WIDTH: std::ops::RangeInclusive<f32> = 170.0..=360.0;
 
 const DEFAULT_SIDEBAR_WIDTH: f32 = 216.0;
@@ -87,7 +86,6 @@ const ROW_SETTLE: f32 = 0.035;
 /// Holding a dragged row this close to the list's edge scrolls the list.
 const SCROLL_REACH: f32 = 28.0;
 
-
 fn sidebar_drop_index(top: f32, heights: &[f32], origin: usize) -> usize {
     let mut slot = 0.0;
     let mut target = 0;
@@ -105,12 +103,10 @@ fn sidebar_drop_index(top: f32, heights: &[f32], origin: usize) -> usize {
     target
 }
 
-
 /// The position a row would take if dropped with its top at `top`.
 fn drop_index(top: f32, count: usize) -> usize {
     ((top / ROW_STEP).round().max(0.0) as usize).min(count.saturating_sub(1))
 }
-
 
 /// Where the row at `index` rests while the row from `origin` is held over
 /// `target`: the rows between them close the gap it left and open one for it.
@@ -124,13 +120,11 @@ fn displaced(index: usize, origin: usize, target: usize) -> usize {
     }
 }
 
-
 /// Centre of the sidebar toggle from the window's leading edge: at the leading
 /// margin while the sidebar is hidden, at its trailing edge while shown.
 fn toggle_offset(view: &ChromeView) -> f32 {
     egui::lerp(22.0..=view.sidebar_width - 22.0, view.sidebar)
 }
-
 
 fn drag_region(ui: &mut Ui, rect: Rect, name: &str) {
     let drag = ui.interact(rect, ui.id().with(name), Sense::click_and_drag());
@@ -142,12 +136,10 @@ fn drag_region(ui: &mut Ui, rect: Rect, name: &str) {
     }
 }
 
-
 fn toggle_maximized(ctx: &egui::Context) {
     let maximized = ctx.input(|input| input.viewport().maximized.unwrap_or(false));
     window::send(ctx, WindowOperation::SetMaximized(!maximized));
 }
-
 
 fn icon_at(
     ui: &mut Ui,
@@ -166,7 +158,6 @@ fn icon_at(
     .inner
 }
 
-
 pub(super) fn initial(name: &str) -> String {
     name.chars()
         .find(|c| c.is_alphanumeric())
@@ -174,16 +165,14 @@ pub(super) fn initial(name: &str) -> String {
         .unwrap_or_else(|| "·".into())
 }
 
-
-
 mod drag;
 mod list;
 mod menus;
 mod rows;
 mod sidebar;
-mod toolbar;
 #[cfg(test)]
 mod tests;
+mod toolbar;
 
 pub use drag::{SidebarDrag, SidebarSlide, WorkspaceDrag};
 pub use sidebar::sidebar;

@@ -28,8 +28,8 @@ pub mod workspace;
 pub mod worktrees;
 use crate::{config::Config, terminal::Cache};
 use neptune_model::{
-    Axis, Destination, PaneId, ProjectId, SidebarItem, SplitId, WindowId, WorkspaceGroupId,
-    WorkspaceId,
+    Axis, Destination, FolderId, PaneId, ProjectId, SidebarItem, SplitId, WindowId,
+    WorkspaceGroupId, WorkspaceId,
 };
 use std::path::PathBuf;
 
@@ -52,6 +52,8 @@ pub enum OverlayState {
     Update,
     Palette,
     Rename(WorkspaceId),
+    /// Name a workspace's row by a command.
+    Command(WorkspaceId),
     GroupDefaultDirectory(WorkspaceGroupId),
     RenameGroup(WorkspaceGroupId),
     NewGroup,
@@ -217,6 +219,24 @@ pub enum Action {
     RenameGroup(WorkspaceGroupId),
     SetGroupName(WorkspaceGroupId, String),
     SetGroupCollapsed(WorkspaceGroupId, bool),
+    SetFolderCollapsed(FolderId, bool),
+    /// Shows, or stops showing, one row for a directory's workspaces.
+    SetFolderGrouped(FolderId, bool),
+    /// Keeps a workspace's row at the top of the sidebar, or returns it to
+    /// its group or folder.
+    SetPinned(WorkspaceId, bool),
+    /// Names a workspace's row by a command; an empty one clears it.
+    SetCommand(WorkspaceId, String),
+    /// Opens the command sheet for a workspace.
+    EditCommand(WorkspaceId),
+    /// Runs the command a workspace's row is named by.
+    RunCommand(WorkspaceId),
+    /// Orders the sidebar once, by name or by how recently each terminal
+    /// wrote: the pinned rows, or everything else.
+    SortSidebar {
+        pinned: bool,
+        by: SidebarSort,
+    },
     MoveSidebarItem(SidebarItem, usize),
     MoveToGroup(WorkspaceId, Option<WorkspaceGroupId>),
     RemoveGroup(WorkspaceGroupId),
@@ -321,10 +341,26 @@ pub enum Action {
     ReadNotifications,
     ClearNotifications,
 }
+
+/// How a manual sidebar sort orders the rows it is asked to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SidebarSort {
+    /// A to Z, ignoring case.
+    Name,
+    /// The workspace whose terminal wrote most recently first; one that has
+    /// not written since it started stands after those that have.
+    Recent,
+}
 #[derive(Clone)]
 pub struct WorkspaceView {
     pub id: WorkspaceId,
     pub group: Option<WorkspaceGroupId>,
+    /// The folder branch this row stands under, if any.
+    pub folder: Option<FolderId>,
+    /// Pinned rows stand at the top of the sidebar apart from their group.
+    pub pinned: bool,
+    /// The command this row is named by, empty for the workspace name.
+    pub command: String,
     pub name: String,
     /// Current local directory of this workspace's focused terminal.
     pub cwd: PathBuf,
@@ -345,6 +381,13 @@ pub struct Branch {
     pub name: String,
     /// The folder has changes that are not committed.
     pub dirty: bool,
+}
+/// A folder branch with what the desktop knows about its directory.
+#[derive(Clone)]
+pub struct FolderView {
+    pub folder: neptune_model::Folder,
+    /// The branch checked out in the folder itself.
+    pub branch: Option<Branch>,
 }
 pub struct PaneRender {
     pub browser: browser::State,

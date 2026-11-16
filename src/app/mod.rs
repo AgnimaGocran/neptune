@@ -37,12 +37,12 @@ use crate::{
     },
     theme::{self, Palette, metrics},
     ui::{
-        self, Action, Close, OverlayState, PaneRender, UiState, WorkspaceView,
+        self, Action, Close, FolderView, OverlayState, PaneRender, UiState, WorkspaceView,
         workspace::PanePresentation,
     },
 };
 use eframe::egui::{self, Pos2, Rect, Stroke, Vec2, emath::GuiRounding as _};
-use neptune_model::{Command, Controller, Effect, Lifecycle, Model, PaneId, Remote};
+use neptune_model::{Command, Controller, Effect, Lifecycle, Model, PaneId, Remote, WorkspaceId};
 use std::{
     collections::BTreeMap,
     path::PathBuf,
@@ -128,6 +128,11 @@ pub struct App {
     file_opener: crate::platform::files::FileOpener,
     ports: crate::runtime::ports::Ports,
     notifications: crate::notifications::Notifications,
+    /// The revision each terminal's output was last sampled at, and when its
+    /// workspace last wrote. The sidebar sorts by the latter on request.
+    revisions: BTreeMap<PaneId, u64>,
+    activity: BTreeMap<WorkspaceId, Instant>,
+    next_activity: Instant,
     /// What each running CLI agent is doing, for the agents tab.
     agents: crate::agent_activity::AgentActivities,
     /// What agents asked for the agents they start, between frames.
@@ -288,6 +293,9 @@ impl App {
             },
             browser_tools: Default::default(),
             notifications: Default::default(),
+            revisions: BTreeMap::new(),
+            activity: BTreeMap::new(),
+            next_activity: Instant::now(),
             agents: Default::default(),
             delegation: Default::default(),
             projects: projects::Projects::new(data.join("projects"), ephemeral),
@@ -692,11 +700,11 @@ impl App {
             .and_then(|workspace| workspace.remote())
     }
     fn views(&self) -> Vec<WorkspaceView> {
-        self.controller
-            .model()
+        let model = self.controller.model();
+        model
             .workspaces()
             .iter()
-            .filter(|w| w.window() == self.controller.model().current_window())
+            .filter(|w| w.window() == model.current_window())
             .map(|w| {
                 let (unread, latest) = self
                     .notifications
@@ -705,6 +713,9 @@ impl App {
                 WorkspaceView {
                     id: w.id(),
                     group: w.group(),
+                    folder: model.folder_of(w.id()),
+                    pinned: w.pinned(),
+                    command: w.command().into(),
                     name: w.name().into(),
                     cwd: cwd.into(),
                     branch: self
@@ -724,6 +735,23 @@ impl App {
                         .iter()
                         .any(|p| matches!(p.lifecycle(), Lifecycle::Starting | Lifecycle::Running)),
                 }
+            })
+            .collect()
+    }
+    /// The folder branches of the sidebar, each with the branch checked out
+    /// in its directory.
+    fn folder_views(&self) -> Vec<FolderView> {
+        let model = self.controller.model();
+        model
+            .folders()
+            .iter()
+            .map(|folder| FolderView {
+                folder: folder.clone(),
+                branch: self.changes.branch(folder.path()).filter(|_| {
+                    model
+                        .folder_workspaces(folder.id())
+                        .any(|workspace| workspace.remote().is_none())
+                }),
             })
             .collect()
     }
@@ -1109,6 +1137,7 @@ impl eframe::App for App {
                 .and_then(|window| window.is_minimized()),
         );
         self.poll(ctx);
+        self.note_activity();
         if ctx.input(|i| i.viewport().close_requested()) && !self.exit_approved {
             window::send(ctx, WindowOperation::CancelClose);
             self.relaunch = false;
@@ -1149,6 +1178,42 @@ impl eframe::App for App {
     }
 }
 impl App {
+    /// Notes the workspaces whose terminals wrote since the last look. Each
+    /// terminal's revision is read once a second rather than every frame, so
+    /// a busy terminal costs one read rather than one per frame.
+    fn note_activity(&mut self) {
+        let now = Instant::now();
+        if now < self.next_activity {
+            return;
+        }
+        self.next_activity = now + Duration::from_secs(1);
+        let sampled: Vec<(PaneId, u64)> = self
+            .sessions
+            .iter()
+            .map(|(pane, session)| (pane, session.revision()))
+            .collect();
+        let mut changed = Vec::new();
+        for (pane, revision) in &sampled {
+            // The first look at a terminal has no earlier revision to compare.
+            if self
+                .revisions
+                .insert(*pane, *revision)
+                .is_some_and(|seen| seen != *revision)
+            {
+                changed.push(*pane);
+            }
+        }
+        for pane in changed {
+            if let Some(workspace) = self.controller.model().workspace_for_pane(pane) {
+                self.activity.insert(workspace, now);
+            }
+        }
+        self.revisions
+            .retain(|pane, _| sampled.iter().any(|(live, _)| live == pane));
+        self.activity
+            .retain(|workspace, _| self.controller.model().workspace(*workspace).is_some());
+    }
+
     fn window_ui(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let window = self.presentation_window();
@@ -1204,19 +1269,20 @@ impl App {
         ui.painter().rect_filled(bounds, radius, p.chrome);
         let mut actions = Vec::new();
         let views = self.views();
-        let sidebar_order: Vec<_> = self
-            .controller
-            .model()
-            .sidebar_order()
-            .iter()
-            .copied()
-            .filter(|item| match item {
-                neptune_model::SidebarItem::Workspace(id) => {
-                    views.iter().any(|workspace| workspace.id == *id)
-                }
-                neptune_model::SidebarItem::Group(_) => true,
-            })
-            .collect();
+        let sidebar_order: Vec<_> =
+            self.controller
+                .model()
+                .sidebar_order()
+                .iter()
+                .copied()
+                .filter(|item| match item {
+                    neptune_model::SidebarItem::Workspace(id) => {
+                        views.iter().any(|workspace| workspace.id == *id)
+                    }
+                    neptune_model::SidebarItem::Group(_)
+                    | neptune_model::SidebarItem::Folder(_) => true,
+                })
+                .collect();
         let window_destinations: Vec<_> = self
             .controller
             .model()
@@ -1368,11 +1434,12 @@ impl App {
         );
         // A pull request is read only while its tab is the one in view.
         let pull_request_shown = panel_reveal > 0.0 && panel_tab == ui::panel::Tab::PullRequest;
-        self.sync_pull_request(&ctx, pull_request_shown);
+        let folder_views = self.folder_views();
         let chrome = ui::chrome::ChromeView {
             keybindings: &self.config.keybindings,
             workspaces: &views,
             groups: self.controller.model().groups(),
+            folders: &folder_views,
             sidebar_order: &sidebar_order,
             windows: &window_destinations,
             active,

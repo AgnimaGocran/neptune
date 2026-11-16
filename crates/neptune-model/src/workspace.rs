@@ -1,6 +1,6 @@
 use crate::{
-    Layout, PaneId, Project, ProjectId, ProjectSpec, Remote, Window, WindowId, WindowSpec,
-    WorkspaceGroupId, WorkspaceId,
+    FolderId, Layout, PaneId, Project, ProjectId, ProjectSpec, Remote, Window, WindowId,
+    WindowSpec, WorkspaceGroupId, WorkspaceId,
 };
 use std::{
     collections::HashSet,
@@ -14,6 +14,7 @@ pub enum Error {
     InvalidWindows,
     UnknownWorkspace(WorkspaceId),
     UnknownWorkspaceGroup(WorkspaceGroupId),
+    UnknownFolder(FolderId),
     WorkspaceGroupLimit,
     UnknownPane(PaneId),
     UnknownSplit(crate::SplitId),
@@ -51,6 +52,7 @@ impl std::fmt::Display for Error {
             Self::InvalidWindows => f.write_str("Every workspace must belong to exactly one window, with a valid active workspace"),
             Self::UnknownWorkspace(id) => write!(f, "Workspace {id} does not exist"),
             Self::UnknownWorkspaceGroup(id) => write!(f, "Workspace group {id} does not exist"),
+            Self::UnknownFolder(id) => write!(f, "Folder {id} does not exist"),
             Self::WorkspaceGroupLimit => f.write_str("Workspace group limit reached"),
             Self::UnknownPane(id) => {
                 write!(f, "Pane {id} does not exist in the targeted workspace")
@@ -237,6 +239,11 @@ pub struct PaneSpec {
 pub struct WorkspaceSpec {
     pub id: WorkspaceId,
     pub group: Option<WorkspaceGroupId>,
+    /// A pinned workspace keeps a row at the top of the sidebar, apart from
+    /// its group or folder.
+    pub pinned: bool,
+    /// The command this workspace's row is named by, or empty for its name.
+    pub command: String,
     pub name: String,
     pub cwd: PathBuf,
     /// An SSH destination; validated when the model adopts the workspace.
@@ -251,6 +258,10 @@ pub struct Workspace {
     pub(crate) id: WorkspaceId,
     pub(crate) window: WindowId,
     pub(crate) group: Option<WorkspaceGroupId>,
+    /// Pinned workspaces stand at the top of the sidebar, in their own rows.
+    pub(crate) pinned: bool,
+    /// The command the sidebar names this workspace by, empty for its name.
+    pub(crate) command: String,
     pub(crate) name: String,
     pub(crate) cwd: PathBuf,
     pub(crate) remote: Option<Remote>,
@@ -267,6 +278,14 @@ impl Workspace {
     }
     pub fn group(&self) -> Option<WorkspaceGroupId> {
         self.group
+    }
+    /// Whether the workspace keeps a row at the top of the sidebar.
+    pub fn pinned(&self) -> bool {
+        self.pinned
+    }
+    /// The command its row is named by; empty when the name stands instead.
+    pub fn command(&self) -> &str {
+        &self.command
     }
     pub fn name(&self) -> &str {
         &self.name
@@ -388,17 +407,60 @@ impl WorkspaceGroup {
     }
 }
 
-/// A top-level sidebar entry. Group children are ordered by `Model::workspaces`.
+/// A top-level sidebar entry. Group and folder children are ordered by
+/// `Model::workspaces`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SidebarItem {
     Workspace(WorkspaceId),
     Group(WorkspaceGroupId),
+    /// A directory more than one ungrouped workspace starts in.
+    Folder(FolderId),
+}
+
+/// A directory the sidebar shows as a branch over the workspaces started
+/// there. It is not a group: nobody names it, it disappears with its last
+/// workspace, and moving one moves the workspaces it holds.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Folder {
+    pub(crate) id: FolderId,
+    pub(crate) path: PathBuf,
+    pub(crate) collapsed: bool,
+    /// False once the sidebar was told to keep this directory's workspaces on
+    /// rows of their own. The folder is retained so the choice survives.
+    pub(crate) grouped: bool,
+}
+
+impl Folder {
+    pub fn id(&self) -> FolderId {
+        self.id
+    }
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+    pub fn collapsed(&self) -> bool {
+        self.collapsed
+    }
+    pub fn grouped(&self) -> bool {
+        self.grouped
+    }
+}
+
+/// A folder as it is saved and restored. Only the collapse state and the
+/// identity the sidebar order names are kept; the path derives both.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FolderSpec {
+    pub id: FolderId,
+    pub path: PathBuf,
+    pub collapsed: bool,
+    /// Whether the directory still shows as one row for its workspaces.
+    pub grouped: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Model {
     pub(crate) workspaces: Vec<Workspace>,
     pub(crate) groups: Vec<WorkspaceGroup>,
+    pub(crate) folders: Vec<Folder>,
     pub(crate) sidebar_order: Vec<SidebarItem>,
     pub(crate) projects: Vec<Project>,
     pub(crate) active: Option<WorkspaceId>,
@@ -408,6 +470,7 @@ pub struct Model {
     pub(crate) next_window: u64,
     pub(crate) next_workspace: u64,
     pub(crate) next_group: u64,
+    pub(crate) next_folder: u64,
     pub(crate) next_pane: u64,
     pub(crate) next_split: u64,
     pub(crate) next_project: u64,
@@ -425,6 +488,7 @@ impl Model {
         Self {
             workspaces: Vec::new(),
             groups: Vec::new(),
+            folders: Vec::new(),
             sidebar_order: Vec::new(),
             projects: Vec::new(),
             active: None,
@@ -438,6 +502,7 @@ impl Model {
             next_window: 2,
             next_workspace: 1,
             next_group: 1,
+            next_folder: 1,
             next_pane: 1,
             next_split: 1,
             next_project: 1,
@@ -627,6 +692,50 @@ impl Model {
     pub fn group(&self, id: WorkspaceGroupId) -> Option<&WorkspaceGroup> {
         self.groups.iter().find(|group| group.id == id)
     }
+    /// The folders the sidebar shows, in the order it shows them.
+    pub fn folders(&self) -> &[Folder] {
+        &self.folders
+    }
+    pub fn folder(&self, id: FolderId) -> Option<&Folder> {
+        self.folders.iter().find(|folder| folder.id == id)
+    }
+    /// The folder that holds the workspace's row, if any.
+    pub fn folder_of(&self, workspace: WorkspaceId) -> Option<FolderId> {
+        let workspace = self.workspace(workspace)?;
+        if workspace.pinned || workspace.group.is_some() {
+            return None;
+        }
+        self.folders
+            .iter()
+            .find(|folder| workspace.cwd == folder.path && folder.grouped)
+            .map(Folder::id)
+    }
+    /// The workspaces a folder holds, in sidebar order.
+    pub fn folder_workspaces(&self, id: FolderId) -> impl Iterator<Item = &Workspace> {
+        let path = self.folder(id).map(|folder| folder.path.clone());
+        self.workspaces.iter().filter(move |workspace| {
+            workspace.group.is_none() && !workspace.pinned && Some(&workspace.cwd) == path.as_ref()
+        })
+    }
+    /// The top-level row a workspace stands in: its own pinned row, its
+    /// group, its folder, or its own row.
+    pub fn entry_of(&self, id: WorkspaceId) -> Option<SidebarItem> {
+        let workspace = self.workspace(id)?;
+        Some(if workspace.pinned {
+            SidebarItem::Workspace(id)
+        } else {
+            match workspace.group {
+                Some(group) => SidebarItem::Group(group),
+                None => self
+                    .folders
+                    .iter()
+                    .find(|folder| folder.path == workspace.cwd && folder.grouped)
+                    .map_or(SidebarItem::Workspace(id), |folder| {
+                        SidebarItem::Folder(folder.id)
+                    }),
+            }
+        })
+    }
     pub fn workspace(&self, id: WorkspaceId) -> Option<&Workspace> {
         self.workspaces.iter().find(|workspace| workspace.id == id)
     }
@@ -810,7 +919,7 @@ impl Model {
         sidebar: bool,
         limits: Limits,
     ) -> Result<Self, Error> {
-        Self::restore_grouped(specs, Vec::new(), active, sidebar, limits)
+        Self::restore_grouped(specs, Vec::new(), Vec::new(), active, sidebar, limits)
     }
 
     /// Restores projects along with everything `restore_ordered` does. This
@@ -819,13 +928,15 @@ impl Model {
     pub fn restore_with_projects(
         specs: Vec<WorkspaceSpec>,
         groups: Vec<WorkspaceGroupSpec>,
+        folders: Vec<FolderSpec>,
         order: Option<Vec<SidebarItem>>,
         projects: Vec<ProjectSpec>,
         active: Option<WorkspaceId>,
         sidebar: bool,
         limits: Limits,
     ) -> Result<Self, Error> {
-        Self::restore_all(specs, groups, projects, active, sidebar, limits)?.ordered(order, active)
+        Self::restore_all(specs, groups, folders, projects, active, sidebar, limits)?
+            .ordered(order, active)
     }
 
     /// Restores organization along with workspaces, validating membership atomically.
@@ -833,16 +944,18 @@ impl Model {
     pub fn restore_grouped(
         specs: Vec<WorkspaceSpec>,
         groups: Vec<WorkspaceGroupSpec>,
+        folders: Vec<FolderSpec>,
         active: Option<WorkspaceId>,
         sidebar: bool,
         limits: Limits,
     ) -> Result<Self, Error> {
-        Self::restore_all(specs, groups, Vec::new(), active, sidebar, limits)
+        Self::restore_all(specs, groups, folders, Vec::new(), active, sidebar, limits)
     }
 
     fn restore_all(
         specs: Vec<WorkspaceSpec>,
         groups: Vec<WorkspaceGroupSpec>,
+        folders: Vec<FolderSpec>,
         projects: Vec<ProjectSpec>,
         active: Option<WorkspaceId>,
         sidebar: bool,
@@ -885,6 +998,33 @@ impl Model {
                 name: group.name,
                 collapsed: group.collapsed,
                 default_directory: group.default_directory,
+            });
+        }
+        // Folders follow the workspaces they hold; a saved one keeps its
+        // identity and whether it was closed.
+        if folders.len() > limits.workspaces {
+            return Err(Error::WorkspaceGroupLimit);
+        }
+        let mut folder_ids = HashSet::new();
+        for folder in folders {
+            if folder.id.get() == 0
+                || !folder_ids.insert(folder.id)
+                || model.folders.iter().any(|held| held.path == folder.path)
+            {
+                return Err(Error::InvalidIdentity);
+            }
+            model.next_folder = model.next_folder.max(
+                folder
+                    .id
+                    .get()
+                    .checked_add(1)
+                    .ok_or(Error::IdentityExhausted)?,
+            );
+            model.folders.push(Folder {
+                id: folder.id,
+                path: folder.path,
+                collapsed: folder.collapsed,
+                grouped: folder.grouped,
             });
         }
         let mut workspace_ids = HashSet::new();
@@ -991,6 +1131,8 @@ impl Model {
                 id: spec.id,
                 window: WindowId::ROOT,
                 group: spec.group,
+                pinned: spec.pinned,
+                command: spec.command,
                 name: spec.name,
                 cwd: spec.cwd,
                 remote,
@@ -1117,6 +1259,8 @@ impl Model {
             .map(|workspace| WorkspaceSpec {
                 id: workspace.id,
                 group: workspace.group,
+                pinned: workspace.pinned,
+                command: workspace.command.clone(),
                 name: workspace.name.clone(),
                 cwd: workspace.cwd.clone(),
                 remote: workspace
@@ -1150,12 +1294,14 @@ impl Model {
     pub fn restore_ordered(
         specs: Vec<WorkspaceSpec>,
         groups: Vec<WorkspaceGroupSpec>,
+        folders: Vec<FolderSpec>,
         order: Option<Vec<SidebarItem>>,
         active: Option<WorkspaceId>,
         sidebar: bool,
         limits: Limits,
     ) -> Result<Self, Error> {
-        Self::restore_grouped(specs, groups, active, sidebar, limits)?.ordered(order, active)
+        Self::restore_grouped(specs, groups, folders, active, sidebar, limits)?
+            .ordered(order, active)
     }
 
     fn ordered(
@@ -1164,9 +1310,29 @@ impl Model {
         active: Option<WorkspaceId>,
     ) -> Result<Self, Error> {
         if let Some(order) = order {
-            let expected: HashSet<_> = self.sidebar_order.iter().copied().collect();
-            if order.len() != expected.len()
-                || order.iter().copied().collect::<HashSet<_>>() != expected
+            // A folder stands for the workspaces it holds: a save from before
+            // folders lists them, and one from after lists the folder.
+            let expand =
+                |model: &Self, item: SidebarItem, into: &mut HashSet<SidebarItem>| match item {
+                    SidebarItem::Folder(id) => into.extend(
+                        model
+                            .folder_workspaces(id)
+                            .map(|workspace| SidebarItem::Workspace(workspace.id)),
+                    ),
+                    item => {
+                        into.insert(item);
+                    }
+                };
+            let mut saved = HashSet::new();
+            for item in order.iter().copied() {
+                expand(&self, item, &mut saved);
+            }
+            let mut expected = HashSet::new();
+            for item in self.sidebar_order.iter().copied() {
+                expand(&self, item, &mut expected);
+            }
+            if saved != expected
+                || order.iter().copied().collect::<HashSet<_>>().len() != order.len()
             {
                 return Err(Error::InvalidSidebarOrder);
             }
@@ -1204,57 +1370,202 @@ impl Model {
             .collect()
     }
 
+    /// The folders as they are saved: only what the sidebar cannot derive.
+    pub fn folder_specs(&self) -> Vec<FolderSpec> {
+        self.folders
+            .iter()
+            .map(|folder| FolderSpec {
+                id: folder.id,
+                path: folder.path.clone(),
+                collapsed: folder.collapsed,
+                grouped: folder.grouped,
+            })
+            .collect()
+    }
+
+    pub(crate) fn folder_mut(&mut self, id: FolderId) -> Result<&mut Folder, Error> {
+        self.folders
+            .iter_mut()
+            .find(|folder| folder.id == id)
+            .ok_or(Error::UnknownFolder(id))
+    }
+
     pub(crate) fn group_mut(&mut self, id: WorkspaceGroupId) -> Result<&mut WorkspaceGroup, Error> {
         self.groups
             .iter_mut()
             .find(|group| group.id == id)
             .ok_or(Error::UnknownWorkspaceGroup(id))
     }
+    /// Takes the sidebar's top-level rows as the caller orders them. Every row
+    /// names something that exists, and each stands once; the model then
+    /// settles the rows it links, including pinned rows at the top.
+    pub(crate) fn set_sidebar_order(&mut self, order: Vec<SidebarItem>) -> Result<(), Error> {
+        let mut seen = HashSet::new();
+        for item in &order {
+            match item {
+                SidebarItem::Workspace(id) if self.workspace(*id).is_none() => {
+                    return Err(Error::UnknownWorkspace(*id));
+                }
+                SidebarItem::Group(id) if self.group(*id).is_none() => {
+                    return Err(Error::UnknownWorkspaceGroup(*id));
+                }
+                SidebarItem::Folder(id) if self.folder(*id).is_none() => {
+                    return Err(Error::UnknownFolder(*id));
+                }
+                _ => {}
+            }
+            if !seen.insert(*item) {
+                return Err(Error::InvalidSidebarOrder);
+            }
+        }
+        self.sidebar_order = order;
+        self.order_workspaces();
+        Ok(())
+    }
+
     /// Reconcile created/closed entries and keep navigation identical to the
-    /// sidebar, including children of collapsed groups. Stable sorting retains
-    /// the order within a group; terminal/session state is untouched.
+    /// sidebar, including children of collapsed groups and folders. Stable
+    /// sorting retains the order within a group; terminal/session state is
+    /// untouched.
     pub(crate) fn order_workspaces(&mut self) {
-        let roots: Vec<_> = self
+        // Workspaces started in one directory share a folder; one alone in
+        // its directory keeps a plain row.
+        let mut held: Vec<(PathBuf, usize)> = Vec::new();
+        for workspace in self
             .workspaces
             .iter()
-            .filter(|w| w.group.is_none())
-            .map(|w| SidebarItem::Workspace(w.id))
-            .collect();
-        let folders: Vec<_> = self
-            .groups
+            .filter(|w| w.group.is_none() && !w.pinned)
+        {
+            match held.iter_mut().find(|(path, _)| *path == workspace.cwd) {
+                Some((_, count)) => *count += 1,
+                None => held.push((workspace.cwd.clone(), 1)),
+            }
+        }
+        held.retain(|(_, count)| *count > 1);
+        // A folder stays while it holds a branch, or because the sidebar was
+        // told to keep that directory's workspaces apart.
+        self.folders
+            .retain(|folder| !folder.grouped || held.iter().any(|(path, _)| *path == folder.path));
+        for (path, _) in &held {
+            if self.folders.iter().all(|folder| folder.path != *path) {
+                self.folders.push(Folder {
+                    id: FolderId::new(self.next_folder),
+                    path: path.clone(),
+                    collapsed: false,
+                    grouped: true,
+                });
+                self.next_folder += 1;
+            }
+        }
+        // The row each workspace belongs to: its group, its folder, or itself.
+        let entries: Vec<(WorkspaceId, SidebarItem)> = self
+            .workspaces
             .iter()
-            .map(|g| SidebarItem::Group(g.id))
+            .map(|workspace| {
+                let entry = if workspace.pinned {
+                    SidebarItem::Workspace(workspace.id)
+                } else {
+                    match workspace.group {
+                        Some(group) => SidebarItem::Group(group),
+                        None => self
+                            .folders
+                            .iter()
+                            .find(|folder| folder.path == workspace.cwd && folder.grouped)
+                            .map_or(SidebarItem::Workspace(workspace.id), |folder| {
+                                SidebarItem::Folder(folder.id)
+                            }),
+                    }
+                };
+                (workspace.id, entry)
+            })
             .collect();
-        self.sidebar_order
-            .retain(|item| roots.contains(item) || folders.contains(item));
-        for item in roots {
-            if !self.sidebar_order.contains(&item) {
-                // New ungrouped workspaces follow the last ungrouped workspace.
-                let index = self
-                    .sidebar_order
+        // A workspace that joins a folder gives its place to that folder, and
+        // the ones that follow it are no longer top-level entries.
+        let mut order: Vec<SidebarItem> = Vec::new();
+        let saved = std::mem::take(&mut self.sidebar_order);
+        // A pinned row returning to its group leaves that group's own row
+        // where it stands rather than taking the pinned slot.
+        let standing: HashSet<SidebarItem> = saved
+            .iter()
+            .copied()
+            .filter(|item| !matches!(item, SidebarItem::Workspace(_)))
+            .collect();
+        for item in saved {
+            let keep = match item {
+                SidebarItem::Workspace(id) => entries
                     .iter()
-                    .rposition(|entry| matches!(entry, SidebarItem::Workspace(_)))
-                    .map_or(0, |index| index + 1);
-                self.sidebar_order.insert(index, item);
+                    .find(|(workspace, _)| *workspace == id)
+                    .map(|(_, entry)| *entry),
+                SidebarItem::Group(id) => self
+                    .groups
+                    .iter()
+                    .any(|group| group.id == id)
+                    .then_some(item),
+                SidebarItem::Folder(id) => self
+                    .folders
+                    .iter()
+                    .any(|folder| folder.id == id && folder.grouped)
+                    .then_some(item),
+            };
+            if let Some(keep) = keep
+                && !order.contains(&keep)
+                && (keep == item || !standing.contains(&keep))
+            {
+                order.push(keep);
             }
         }
-        for item in folders {
-            if !self.sidebar_order.contains(&item) {
-                self.sidebar_order.push(item);
+        // Entries the order does not have yet: plain workspaces follow the
+        // last one of them, groups and folders follow everything.
+        for (_, entry) in &entries {
+            if order.contains(entry) {
+                continue;
+            }
+            match entry {
+                SidebarItem::Workspace(_) => {
+                    let index = order
+                        .iter()
+                        .rposition(|item| matches!(item, SidebarItem::Workspace(_)))
+                        .map_or(0, |index| index + 1);
+                    order.insert(index, *entry);
+                }
+                _ => order.push(*entry),
             }
         }
-        let order = &self.sidebar_order;
-        self.groups.sort_by_key(|group| {
-            order
+        // A group can stand empty, so nothing else names its place.
+        for group in &self.groups {
+            let entry = SidebarItem::Group(group.id);
+            if !order.contains(&entry) {
+                order.push(entry);
+            }
+        }
+        // Pinned rows stand above everything else, in their own order.
+        let pinned = |entry: &SidebarItem| match entry {
+            SidebarItem::Workspace(id) => self
+                .workspaces
                 .iter()
-                .position(|item| *item == SidebarItem::Group(group.id))
-        });
-        self.workspaces.sort_by_key(|workspace| {
-            let entry = workspace
-                .group
-                .map_or(SidebarItem::Workspace(workspace.id), SidebarItem::Group);
-            order.iter().position(|item| *item == entry)
-        });
+                .any(|workspace| workspace.id == *id && workspace.pinned),
+            _ => false,
+        };
+        let mut front: Vec<SidebarItem> = order.iter().copied().filter(pinned).collect();
+        order.retain(|item| !pinned(item));
+        front.extend(order);
+        let order = front;
+        {
+            let order = &order;
+            let position = |entry: SidebarItem| order.iter().position(|item| *item == entry);
+            self.groups
+                .sort_by_key(|group| position(SidebarItem::Group(group.id)));
+            self.folders
+                .sort_by_key(|folder| position(SidebarItem::Folder(folder.id)));
+            self.workspaces.sort_by_key(|workspace| {
+                let entry = entries
+                    .iter()
+                    .find(|(id, _)| *id == workspace.id)
+                    .map_or(SidebarItem::Workspace(workspace.id), |(_, entry)| *entry);
+                position(entry)
+            });
+        }
+        self.sidebar_order = order;
     }
 
     pub(crate) fn workspace_mut(&mut self, id: WorkspaceId) -> Result<&mut Workspace, Error> {

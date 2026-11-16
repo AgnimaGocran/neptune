@@ -535,6 +535,52 @@ impl App {
                 ctx,
                 Command::SetWorkspaceGroupCollapsed { group, collapsed },
             ),
+            Action::SetFolderCollapsed(folder, collapsed) => {
+                self.dispatch(ctx, Command::SetFolderCollapsed { folder, collapsed })
+            }
+            Action::SetFolderGrouped(folder, grouped) => {
+                self.dispatch(ctx, Command::SetFolderGrouped { folder, grouped })
+            }
+            Action::SetPinned(workspace, pinned) => {
+                let pinned_now = self
+                    .controller
+                    .model()
+                    .workspaces()
+                    .iter()
+                    .filter(|item| item.pinned())
+                    .count();
+                if pinned && pinned_now >= self.config.max_pinned {
+                    self.ui.error = Some(format!(
+                        "At most {} pinned workspaces; unpin one first",
+                        self.config.max_pinned
+                    ));
+                    return;
+                }
+                self.dispatch(ctx, Command::SetWorkspacePinned { workspace, pinned })
+            }
+            Action::SetCommand(workspace, command) => {
+                self.dispatch(ctx, Command::SetWorkspaceCommand { workspace, command })
+            }
+            Action::EditCommand(workspace) => {
+                if let Some(item) = self.controller.model().workspace(workspace) {
+                    self.ui.rename_name = item.command().to_owned();
+                    self.ui.overlay = OverlayState::Command(workspace);
+                    self.ui.overlay_focus = true;
+                }
+            }
+            Action::RunCommand(workspace) => {
+                let Some(item) = self.controller.model().workspace(workspace) else {
+                    return;
+                };
+                let (pane, command) = (item.active(), item.command().to_owned());
+                let Some(session) = self.sessions.get(pane) else {
+                    return;
+                };
+                if !command.is_empty() {
+                    let _ = session.write(format!("{command}\r").as_bytes());
+                }
+            }
+            Action::SortSidebar { pinned, by } => self.sort_sidebar(ctx, pinned, by),
             Action::MoveToGroup(workspace, group) => {
                 self.dispatch(ctx, Command::SetWorkspaceGroup { workspace, group })
             }

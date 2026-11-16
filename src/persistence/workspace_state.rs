@@ -1,7 +1,7 @@
 use neptune_model::{
-    Axis, Layout, Limits, Model, PaneId, PaneSpec, ProjectId, ProjectKey, ProjectSpec, SidebarItem,
-    SplitId, WindowId, WindowSpec, WorkspaceGroupId, WorkspaceGroupSpec, WorkspaceId,
-    WorkspaceSpec,
+    Axis, FolderId, FolderSpec, Layout, Limits, Model, PaneId, PaneSpec, ProjectId, ProjectKey,
+    ProjectSpec, SidebarItem, SplitId, WindowId, WindowSpec, WorkspaceGroupId, WorkspaceGroupSpec,
+    WorkspaceId, WorkspaceSpec,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -10,6 +10,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// Version 16 adds the folders the sidebar closes over the workspaces that
+/// start in one directory.
 /// Version 15 adds native window membership and each window's selected workspace
 /// and sidebar visibility. Window geometry remains a separate desktop file.
 /// Version 14 adds browser pane kinds. Browser addresses and profiles are never saved here.
@@ -23,7 +25,10 @@ use std::{
 /// started a pane's agent. Version 8 added workspace group default
 /// directories and the pull requests an agent linked to its pane. Versions
 /// 1–14 remain readable.
-pub const SCHEMA_VERSION: u32 = 15;
+/// Version 17 adds the workspaces pinned to the top of the sidebar.
+/// Version 18 records whether a directory still groups its workspaces.
+/// Version 19 names a workspace row by the command it runs.
+pub const SCHEMA_VERSION: u32 = 19;
 const MAX_STATE_BYTES: u64 = 8 * 1024 * 1024;
 
 /// This DTO is the disk contract. Runtime layout serialization cannot change it.
@@ -34,6 +39,9 @@ pub struct StateSnapshot {
     pub workspaces: Vec<SavedWorkspace>,
     #[serde(default)]
     pub groups: Vec<SavedWorkspaceGroup>,
+    /// The folders the sidebar closed, from schema version 16.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub folders: Vec<SavedFolder>,
     #[serde(default)]
     pub sidebar_order: Option<Vec<SavedSidebarItem>>,
     /// The projects of the window, from schema version 13.
@@ -143,8 +151,16 @@ impl SavedProject {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SavedSidebarItem {
-    Workspace { workspace: WorkspaceId },
-    Group { group: WorkspaceGroupId },
+    Workspace {
+        workspace: WorkspaceId,
+    },
+    Group {
+        group: WorkspaceGroupId,
+    },
+    /// From schema version 16.
+    Folder {
+        folder: FolderId,
+    },
 }
 
 impl From<SavedSidebarItem> for SidebarItem {
@@ -152,6 +168,7 @@ impl From<SavedSidebarItem> for SidebarItem {
         match item {
             SavedSidebarItem::Workspace { workspace } => Self::Workspace(workspace),
             SavedSidebarItem::Group { group } => Self::Group(group),
+            SavedSidebarItem::Folder { folder } => Self::Folder(folder),
         }
     }
 }
@@ -161,6 +178,34 @@ impl From<SidebarItem> for SavedSidebarItem {
         match item {
             SidebarItem::Workspace(workspace) => Self::Workspace { workspace },
             SidebarItem::Group(group) => Self::Group { group },
+            SidebarItem::Folder(folder) => Self::Folder { folder },
+        }
+    }
+}
+
+/// A folder the sidebar closes over its workspaces, from schema version 16.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SavedFolder {
+    pub id: FolderId,
+    pub path: PathBuf,
+    pub collapsed: bool,
+    /// Whether the directory still shows as one row, from schema version 18.
+    #[serde(default = "yes")]
+    pub grouped: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl SavedFolder {
+    fn into_spec(self) -> FolderSpec {
+        FolderSpec {
+            id: self.id,
+            path: self.path,
+            collapsed: self.collapsed,
+            grouped: self.grouped,
         }
     }
 }
@@ -191,6 +236,13 @@ pub struct SavedWorkspace {
     pub id: WorkspaceId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<WorkspaceGroupId>,
+    /// A pinned workspace keeps its row at the top of the sidebar, from
+    /// schema version 17.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pinned: bool,
+    /// The command its row is named by, from schema version 19.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub command: String,
     pub name: String,
     pub cwd: PathBuf,
     /// SSH destination of a remote workspace. Never a credential.
@@ -281,6 +333,8 @@ impl StateSnapshot {
                 .map(|workspace| SavedWorkspace {
                     id: workspace.id(),
                     group: workspace.group(),
+                    pinned: workspace.pinned(),
+                    command: workspace.command().into(),
                     name: workspace.name().into(),
                     cwd: workspace.cwd().into(),
                     ssh: workspace
@@ -327,6 +381,16 @@ impl StateSnapshot {
                     name: group.name().into(),
                     collapsed: group.collapsed(),
                     default_directory: group.default_directory().map(Path::to_path_buf),
+                })
+                .collect(),
+            folders: model
+                .folder_specs()
+                .into_iter()
+                .map(|folder| SavedFolder {
+                    id: folder.id,
+                    path: folder.path,
+                    collapsed: folder.collapsed,
+                    grouped: folder.grouped,
                 })
                 .collect(),
             projects: model
@@ -406,6 +470,10 @@ impl StateSnapshot {
                 .into_iter()
                 .map(SavedWorkspaceGroup::into_spec)
                 .collect(),
+            self.folders
+                .into_iter()
+                .map(SavedFolder::into_spec)
+                .collect(),
             self.sidebar_order
                 .map(|items| items.into_iter().map(Into::into).collect()),
             projects,
@@ -425,6 +493,8 @@ impl SavedWorkspace {
     fn into_spec(self) -> WorkspaceSpec {
         WorkspaceSpec {
             group: self.group,
+            pinned: self.pinned,
+            command: self.command,
             id: self.id,
             name: self.name,
             cwd: self.cwd,
@@ -685,6 +755,7 @@ fn restore_versioned(snapshot: StateSnapshot, limits: Limits, report: &mut LoadR
         match Model::restore_grouped(
             Vec::new(),
             candidate.clone(),
+            Vec::new(),
             None,
             snapshot.sidebar,
             limits,
@@ -694,6 +765,23 @@ fn restore_versioned(snapshot: StateSnapshot, limits: Limits, report: &mut LoadR
                 .diagnostics
                 .push(format!("Skipped invalid workspace group {name:?}: {error}")),
         }
+    }
+    // A folder is only a place the sidebar marks closed, so one that repeats
+    // an identity or a directory is left out rather than failing the restore.
+    let mut folders: Vec<FolderSpec> = Vec::new();
+    for folder in snapshot.folders {
+        if folder.id.get() == 0
+            || folders
+                .iter()
+                .any(|held| held.id == folder.id || held.path == folder.path)
+        {
+            report.diagnostics.push(format!(
+                "Skipped invalid folder {}: identity or directory repeated",
+                folder.path.display()
+            ));
+            continue;
+        }
+        folders.push(folder.into_spec());
     }
     let mut specs = Vec::new();
     let mut total = 0;
@@ -807,7 +895,14 @@ fn restore_versioned(snapshot: StateSnapshot, limits: Limits, report: &mut LoadR
         }
         let mut candidate = specs.clone();
         candidate.push(spec.clone());
-        match Model::restore_grouped(candidate, groups.clone(), None, snapshot.sidebar, limits) {
+        match Model::restore_grouped(
+            candidate,
+            groups.clone(),
+            folders.clone(),
+            None,
+            snapshot.sidebar,
+            limits,
+        ) {
             Ok(_) => {
                 total += spec.panes.len();
                 specs.push(spec);
@@ -829,6 +924,7 @@ fn restore_versioned(snapshot: StateSnapshot, limits: Limits, report: &mut LoadR
                 Model::restore_with_projects(
                     specs.clone(),
                     groups.clone(),
+                    folders.clone(),
                     None,
                     candidate.clone(),
                     None,
@@ -863,6 +959,7 @@ fn restore_versioned(snapshot: StateSnapshot, limits: Limits, report: &mut LoadR
         match Model::restore_with_projects(
             linked.clone(),
             groups.clone(),
+            folders.clone(),
             None,
             projects.clone(),
             None,
@@ -892,6 +989,7 @@ fn restore_versioned(snapshot: StateSnapshot, limits: Limits, report: &mut LoadR
         match Model::restore_with_projects(
             linked.clone(),
             groups.clone(),
+            folders.clone(),
             None,
             projects.clone(),
             None,
@@ -914,6 +1012,7 @@ fn restore_versioned(snapshot: StateSnapshot, limits: Limits, report: &mut LoadR
     match Model::restore_with_projects(
         specs.clone(),
         groups.clone(),
+        folders.clone(),
         None,
         projects.clone(),
         active,
@@ -924,12 +1023,22 @@ fn restore_versioned(snapshot: StateSnapshot, limits: Limits, report: &mut LoadR
             let order = snapshot.sidebar_order.map(|saved| {
                 let mut order = Vec::new();
                 for item in saved.into_iter().map(SidebarItem::from) {
-                    if model.sidebar_order().contains(&item) && !order.contains(&item) {
-                        order.push(item);
-                    } else {
-                        report.diagnostics.push(format!(
-                            "Skipped unavailable or duplicate sidebar entry {item:?}"
-                        ));
+                    // A workspace the model lays out under its folder or group
+                    // keeps that row's place, as an older save that listed the
+                    // workspace itself asked.
+                    let row = match item {
+                        SidebarItem::Workspace(id) => model.entry_of(id),
+                        _ => Some(item),
+                    };
+                    match row.filter(|row| model.sidebar_order().contains(row)) {
+                        Some(row) => {
+                            if !order.contains(&row) {
+                                order.push(row);
+                            }
+                        }
+                        None => report
+                            .diagnostics
+                            .push(format!("Skipped unavailable sidebar entry {item:?}")),
                     }
                 }
                 for item in model.sidebar_order() {
@@ -950,6 +1059,7 @@ fn restore_versioned(snapshot: StateSnapshot, limits: Limits, report: &mut LoadR
             match Model::restore_with_projects(
                 specs,
                 groups,
+                folders,
                 order,
                 projects,
                 active,
@@ -1243,6 +1353,8 @@ fn restore_legacy(legacy: LegacyState, limits: Limits, report: &mut LoadReport) 
         }
         specs.push(WorkspaceSpec {
             group: None,
+            pinned: false,
+            command: String::new(),
             id,
             name: workspace.name,
             cwd: workspace.cwd,
@@ -1906,6 +2018,96 @@ mod tests {
                 .map(|remote| remote.destination()),
             Some("me@devbox")
         );
+    }
+
+    #[test]
+    fn an_older_order_that_lists_workspaces_keeps_their_folder_row_in_place() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("workspaces.json");
+        let app = directory.path().join("app");
+        let web = directory.path().join("web");
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::create_dir_all(&web).unwrap();
+        let mut controller = Controller::new(Model::default());
+        for (name, cwd) in [("one", &app), ("two", &app), ("web", &web)] {
+            controller
+                .dispatch(Command::AddWorkspace {
+                    group: None,
+                    cwd: cwd.clone(),
+                    name: name.into(),
+                    remote: None,
+                })
+                .unwrap();
+        }
+        let model = controller.model();
+        let ids: Vec<u64> = model.workspaces().iter().map(|w| w.id().get()).collect();
+        let shared: Vec<u64> = model
+            .workspaces()
+            .iter()
+            .filter(|workspace| workspace.cwd() == app)
+            .map(|workspace| workspace.id().get())
+            .collect();
+        let mut order = shared.clone();
+        order.extend(ids.iter().copied().filter(|id| !shared.contains(id)));
+        let mut saved = serde_json::to_value(StateSnapshot::from_model(model)).unwrap();
+        // A save from before folders wrote each workspace on its own row, and
+        // the two that share a directory stood first and second.
+        saved["folders"] = serde_json::json!([]);
+        saved["sidebar_order"] = order
+            .iter()
+            .map(|id| serde_json::json!({"kind": "workspace", "workspace": id}))
+            .collect();
+        std::fs::write(&path, serde_json::to_vec(&saved).unwrap()).unwrap();
+        let report = load_state(&path, Limits::default());
+        assert!(report.can_write);
+        assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+        let model = report.model.unwrap();
+        // The two in one directory stand under one row, where the first was.
+        assert_eq!(model.sidebar_order().len(), 2);
+        let SidebarItem::Folder(folder) = model.sidebar_order()[0] else {
+            panic!("the shared directory lost its place");
+        };
+        assert_eq!(model.folder_workspaces(folder).count(), 2);
+        assert!(matches!(
+            model.sidebar_order()[1],
+            SidebarItem::Workspace(_)
+        ));
+    }
+
+    #[test]
+    fn a_pinned_workspace_round_trips_and_an_unpinned_one_writes_no_flag() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("workspaces.json");
+        let mut controller = Controller::new(
+            sample(directory.path())
+                .into_model(Limits::default())
+                .unwrap(),
+        );
+        let workspace = controller.model().active_workspace().unwrap();
+        controller
+            .dispatch(Command::SetWorkspacePinned {
+                workspace,
+                pinned: true,
+            })
+            .unwrap();
+        let saved = serde_json::to_value(StateSnapshot::from_model(controller.model())).unwrap();
+        assert_eq!(saved["version"], SCHEMA_VERSION);
+        assert_eq!(saved["workspaces"][0]["pinned"], true);
+        std::fs::write(&path, serde_json::to_vec(&saved).unwrap()).unwrap();
+        let report = load_state(&path, Limits::default());
+        assert!(report.can_write && !report.migrated);
+        assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+        let model = report.model.unwrap();
+        assert!(model.workspaces()[0].pinned());
+        // Unpinned, the flag is left out so the file reads as it did before.
+        controller
+            .dispatch(Command::SetWorkspacePinned {
+                workspace,
+                pinned: false,
+            })
+            .unwrap();
+        let saved = serde_json::to_value(StateSnapshot::from_model(controller.model())).unwrap();
+        assert!(saved["workspaces"][0].get("pinned").is_none());
     }
 
     #[test]

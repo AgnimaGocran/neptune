@@ -65,6 +65,10 @@ pub enum Icon {
     Lock,
     /// The pointer that picks an element in a page.
     Pointer,
+    /// Sorting rows by name.
+    SortName,
+    /// Sorting rows by how recently they changed.
+    SortRecent,
     Record,
     Person,
     /// The eight reactions a host has, each a small picture.
@@ -651,6 +655,18 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
                 circle(x, 12.0, 3.9);
                 painter.circle_filled(point(x + 1.0, 12.6), 1.4 * scale, color);
             }
+        }
+        Icon::SortName => {
+            // An A beside a downward arrow.
+            line(&[[5.0, 17.0], [8.5, 7.0], [12.0, 17.0]]);
+            line(&[[6.6, 13.4], [10.4, 13.4]]);
+            line(&[[16.5, 7.0], [16.5, 17.0]]);
+            line(&[[13.9, 14.4], [16.5, 17.0], [19.1, 14.4]]);
+        }
+        Icon::SortRecent => {
+            // A clock face and its hands.
+            circle(12.0, 12.0, 8.0);
+            line(&[[12.0, 7.5], [12.0, 12.0], [15.2, 13.6]]);
         }
         Icon::Star => {
             // Closed, so all five points are mitred alike.

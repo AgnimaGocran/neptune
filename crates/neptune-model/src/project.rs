@@ -191,6 +191,7 @@ mod tests {
         Model::restore_with_projects(
             controller.model().specs(),
             controller.model().group_specs(),
+            controller.model().folder_specs(),
             Some(controller.model().sidebar_order().to_vec()),
             controller.model().project_specs(),
             controller.model().active_workspace(),
@@ -548,6 +549,7 @@ mod tests {
         assert_eq!(
             Model::restore_with_projects(
                 specs,
+                Vec::new(),
                 Vec::new(),
                 None,
                 controller.model().project_specs(),
@@ -1061,6 +1063,7 @@ mod tests {
             Model::restore_with_projects(
                 specs,
                 Vec::new(),
+                Vec::new(),
                 None,
                 projects,
                 None,
@@ -1077,11 +1080,26 @@ mod tests {
             missing
         );
         assert_eq!(
-            Model::restore_grouped(specs(), Vec::new(), None, true, Limits::default()),
+            Model::restore_grouped(
+                specs(),
+                Vec::new(),
+                Vec::new(),
+                None,
+                true,
+                Limits::default()
+            ),
             missing
         );
         assert_eq!(
-            Model::restore_ordered(specs(), Vec::new(), None, None, true, Limits::default()),
+            Model::restore_ordered(
+                specs(),
+                Vec::new(),
+                Vec::new(),
+                None,
+                None,
+                true,
+                Limits::default()
+            ),
             missing
         );
 

@@ -1,6 +1,6 @@
 //! The command palette: every action, searchable, with its shortcut.
 use super::helpers::{SheetPlacement, bare_text_edit, elided, galley_at, keycaps, place, sheet};
-use super::{Action, UiState, WorkspaceView};
+use super::{Action, SidebarSort, UiState, WorkspaceView};
 use crate::keybindings::BindingAction as Binding;
 use crate::{
     config::{Config, Theme},
@@ -502,6 +502,47 @@ fn commands(view: &PaletteView) -> Vec<Command> {
                     workspace: active,
                     pointer: None,
                     grip: None,
+                }],
+            ),
+            command(
+                "Workspace",
+                Icon::Star,
+                if view
+                    .workspaces
+                    .iter()
+                    .any(|workspace| workspace.id == active && workspace.pinned)
+                {
+                    "Unpin workspace"
+                } else {
+                    "Pin workspace to top"
+                },
+                "",
+                [Action::SetPinned(
+                    active,
+                    !view
+                        .workspaces
+                        .iter()
+                        .any(|workspace| workspace.id == active && workspace.pinned),
+                )],
+            ),
+            command(
+                "Workspace",
+                Icon::SortName,
+                "Sort sidebar by name",
+                "",
+                [Action::SortSidebar {
+                    pinned: false,
+                    by: SidebarSort::Name,
+                }],
+            ),
+            command(
+                "Workspace",
+                Icon::SortRecent,
+                "Sort sidebar by last update",
+                "",
+                [Action::SortSidebar {
+                    pinned: false,
+                    by: SidebarSort::Recent,
                 }],
             ),
             if remote {
@@ -1089,6 +1130,7 @@ mod tests {
                     default_directory: None,
                 })
                 .collect(),
+            Vec::new(),
             None,
             true,
             Default::default(),
@@ -1178,6 +1220,9 @@ mod tests {
                 unread: 0,
                 alert: None,
                 group: None,
+                folder: None,
+                pinned: false,
+                command: String::new(),
                 id: WorkspaceId::new(id),
                 name: "app".into(),
                 cwd: "/srv/app".into(),
@@ -1270,6 +1315,9 @@ mod tests {
                 unread: 0,
                 alert: None,
                 group: None,
+                folder: None,
+                pinned: false,
+                command: String::new(),
                 id: WorkspaceId::new(id),
                 name: "app".into(),
                 cwd: "/srv/app".into(),
@@ -1313,6 +1361,9 @@ mod tests {
                 unread: 0,
                 alert: None,
                 group: None,
+                folder: None,
+                pinned: false,
+                command: String::new(),
                 id: WorkspaceId::new(id),
                 name: "app".into(),
                 cwd: "/srv/app".into(),
@@ -1362,6 +1413,9 @@ mod tests {
                     unread: 0,
                     alert: None,
                     group: None,
+                    folder: None,
+                    pinned: false,
+                    command: String::new(),
                     id: WorkspaceId::new(id),
                     name: "app".into(),
                     cwd: "/srv/app".into(),
@@ -1429,6 +1483,9 @@ mod tests {
         let workspaces = [WorkspaceView {
             id: WorkspaceId::new(1),
             group: None,
+            folder: None,
+            pinned: false,
+            command: String::new(),
             name: "shop".into(),
             cwd: "/tmp".into(),
             branch: None,

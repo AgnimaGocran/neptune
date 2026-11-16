@@ -11,6 +11,14 @@ their preparation records remain in Git history.
 
 ### What's New
 
+- Workspaces can be pinned to the top of the sidebar, each in a row of its own
+  apart from its group or folder, and several at once. The **Pinned** heading
+  and the buttons beside the sidebar toggle order the sidebar by name or by
+  last update, once, when pressed.
+- A workspace's row can be named by a command: **Set command…** in its menu
+  keeps one line as the row's label, the ▶ button runs it again in that
+  terminal, and an empty command brings the workspace name back. Nothing typed
+  into a terminal is read.
 - Browser tabs stay signed in. They now open in a profile that keeps cookies
   and site data on this computer; add more profiles from a tab's menu, or
   choose **Private** for a tab that keeps nothing, as every tab did before.

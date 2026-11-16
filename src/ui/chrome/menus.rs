@@ -1,6 +1,6 @@
 //! The menus of the chrome: a workspace, a group and the empty space.
+use super::rows::{folder_row, group_row, workspace_rows};
 use super::*;
-use super::rows::{group_row, workspace_rows};
 
 pub(super) fn workspace_menu(
     ui: &mut Ui,
@@ -10,11 +10,26 @@ pub(super) fn workspace_menu(
     actions: &mut Vec<Action>,
 ) {
     menu_layout(ui, 210.0);
+    if menu_item(
+        ui,
+        p,
+        Icon::Star,
+        if workspace.pinned {
+            "Unpin"
+        } else {
+            "Pin to top"
+        },
+        "",
+        false,
+    ) {
+        actions.push(Action::SetPinned(workspace.id, !workspace.pinned));
+        ui.close();
+    }
     let siblings: Vec<usize> = view
         .workspaces
         .iter()
         .enumerate()
-        .filter(|(_, row)| row.group == workspace.group)
+        .filter(|(_, row)| row.group == workspace.group && row.pinned == workspace.pinned)
         .map(|(index, _)| index)
         .collect();
     let position = siblings
@@ -93,7 +108,6 @@ pub(super) fn workspace_menu(
     }
 }
 
-
 pub(super) fn creation_menu(
     ui: &mut Ui,
     p: Palette,
@@ -114,7 +128,6 @@ pub(super) fn creation_menu(
         ui.close();
     }
 }
-
 
 #[expect(
     clippy::too_many_arguments,
@@ -160,7 +173,7 @@ pub(super) fn workspace_group(
                 let rows: Vec<_> = view
                     .workspaces
                     .iter()
-                    .filter(|w| w.group == Some(group.id()))
+                    .filter(|w| w.group == Some(group.id()) && !w.pinned)
                     .collect();
                 let mut idle = WorkspaceDrag::default();
                 let child_drag = if drag.lifted.is_none_or(|id| rows.iter().any(|w| w.id == id)) {
@@ -196,3 +209,71 @@ pub(super) fn workspace_group(
     response
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "folder presentation and row drag state stay separate"
+)]
+pub(super) fn workspace_folder(
+    ui: &mut Ui,
+    p: Palette,
+    view: &ChromeView,
+    folder: &FolderView,
+    viewport: Rect,
+    drag: &mut WorkspaceDrag,
+    dragging: bool,
+    geometry: &mut Vec<(WorkspaceId, Rect)>,
+    actions: &mut Vec<Action>,
+) -> egui::Response {
+    let mut collapse = egui::collapsing_header::CollapsingState::load_with_default_open(
+        ui.ctx(),
+        ui.id().with("body"),
+        !folder.folder.collapsed(),
+    );
+    collapse.set_open(!folder.folder.collapsed());
+    let openness = collapse.openness(ui.ctx());
+    let response = folder_row(ui, p, view, folder, openness, dragging, actions);
+    // A workspace the folder hides cannot be carried.
+    if folder.folder.collapsed()
+        && drag.lifted.is_some_and(|id| {
+            view.workspaces
+                .iter()
+                .any(|w| w.id == id && w.folder == Some(folder.folder.id()))
+        })
+    {
+        *drag = WorkspaceDrag::default();
+    }
+    collapse.show_body_unindented(ui, |ui| {
+        ui.set_opacity(openness);
+        // A folder's workspaces keep the row's full height and a quiet indent.
+        ui.scope_builder(
+            UiBuilder::new().max_rect(Rect::from_min_max(
+                ui.cursor().min + vec2(14.0, 0.0),
+                ui.max_rect().max,
+            )),
+            |ui| {
+                let rows: Vec<_> = view
+                    .workspaces
+                    .iter()
+                    .filter(|w| w.folder == Some(folder.folder.id()))
+                    .collect();
+                let mut idle = WorkspaceDrag::default();
+                let child_drag = if drag.lifted.is_none_or(|id| rows.iter().any(|w| w.id == id)) {
+                    &mut *drag
+                } else {
+                    &mut idle
+                };
+                workspace_rows(
+                    ui,
+                    p,
+                    view,
+                    &rows,
+                    viewport.intersect(ui.clip_rect()),
+                    child_drag,
+                    geometry,
+                    actions,
+                );
+            },
+        );
+    });
+    response
+}

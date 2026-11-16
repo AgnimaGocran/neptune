@@ -1,6 +1,6 @@
 //! Rows of the sidebar list: workspaces, their tabs and the group rows.
+use super::menus::{creation_menu, workspace_folder, workspace_group, workspace_menu};
 use super::*;
-use super::menus::{creation_menu, workspace_group, workspace_menu};
 
 /// How a workspace row is drawn this frame.
 pub(super) struct RowState {
@@ -17,7 +17,6 @@ pub(super) struct RowState {
     /// The carried terminal's session can run in this workspace.
     accepts: bool,
 }
-
 
 pub(super) fn workspace_row(
     ui: &mut Ui,
@@ -70,6 +69,10 @@ pub(super) fn workspace_row(
             Stroke::new(1.0, p.border.gamma_multiply(lift)),
             StrokeKind::Inside,
         );
+    }
+    if workspace.pinned && lift <= 0.0 {
+        // Pinned rows stand on a slightly darker block of their own.
+        painter.rect_filled(row, metrics::ROW_RADIUS, theme::tint(Color32::BLACK, 0.10));
     }
     if selected {
         painter.rect_filled(row, metrics::ROW_RADIUS, p.pressed);
@@ -146,7 +149,7 @@ pub(super) fn workspace_row(
     let text_width = row.right() - text_left - trailing;
     galley_at(
         &painter,
-        Pos2::new(name_left, row.center().y - 7.5),
+        Pos2::new(name_left, row.center().y + 1.0),
         elided(
             &painter,
             &workspace.name,
@@ -159,7 +162,7 @@ pub(super) fn workspace_row(
             row.right() - name_left - (hint_width + 14.0).max(trailing),
         ),
     );
-    let detail = Pos2::new(text_left, row.center().y + 8.5);
+    let detail = Pos2::new(text_left, row.center().y - 15.0);
     if let Some(alert) = &workspace.alert {
         // What the workspace is asking for, until it is read.
         icons::paint(
@@ -507,7 +510,6 @@ pub(super) fn workspace_rows(
     }
 }
 
-
 pub(super) fn group_row(
     ui: &mut Ui,
     p: Palette,
@@ -536,12 +538,12 @@ pub(super) fn group_row(
     let selected = view
         .workspaces
         .iter()
-        .any(|w| w.group == Some(group.id()) && Some(w.id) == view.active);
+        .any(|w| w.group == Some(group.id()) && !w.pinned && Some(w.id) == view.active);
     // Open folders show each workspace's own count; a closed one sums them.
     let unread: usize = view
         .workspaces
         .iter()
-        .filter(|w| group.collapsed() && w.group == Some(group.id()))
+        .filter(|w| group.collapsed() && w.group == Some(group.id()) && !w.pinned)
         .map(|w| w.unread)
         .sum();
     let painter = ui.painter();
@@ -625,7 +627,7 @@ pub(super) fn group_row(
         let count = view
             .workspaces
             .iter()
-            .filter(|w| w.group == Some(group.id()))
+            .filter(|w| w.group == Some(group.id()) && !w.pinned)
             .count();
         if unread > 0 {
             crate::ui::notifications::pill(
@@ -690,12 +692,204 @@ pub(super) fn group_row(
                 actions.push(Action::GroupDefaultDirectory(group.id()));
                 ui.close();
             }
-            if menu_item(ui, p, Icon::Close, "Remove group", "", false) {
+            if menu_item(ui, p, Icon::Close, "Ungroup", "", false) {
                 actions.push(Action::RemoveGroup(group.id()));
                 ui.close();
             }
         });
     response
+}
+
+/// The row a folder of workspaces shows in place of a name: the directory it
+/// holds, the branch checked out there, and how many workspaces it has.
+pub(super) fn folder_row(
+    ui: &mut Ui,
+    p: Palette,
+    view: &ChromeView,
+    folder: &FolderView,
+    openness: f32,
+    dragging: bool,
+    actions: &mut Vec<Action>,
+) -> egui::Response {
+    let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), GROUP_HEIGHT), Sense::hover());
+    let response = ui.interact(
+        row,
+        ui.id().with(("sidebar-folder", folder.folder.id())),
+        Sense::click_and_drag(),
+    );
+    let hovered = !dragging && (ui.rect_contains_pointer(row) || response.context_menu_opened());
+    let members: Vec<_> = view
+        .workspaces
+        .iter()
+        .filter(|workspace| workspace.folder == Some(folder.folder.id()))
+        .collect();
+    let selected = members
+        .iter()
+        .any(|workspace| Some(workspace.id) == view.active);
+    // A closed folder sums what its workspaces have to say.
+    let unread: usize = if folder.folder.collapsed() {
+        members.iter().map(|workspace| workspace.unread).sum()
+    } else {
+        0
+    };
+    let painter = ui.painter();
+    if hovered {
+        painter.rect_filled(row, metrics::ROW_RADIUS, p.hover);
+    }
+    if response.has_focus() {
+        painter.rect_stroke(
+            row,
+            metrics::ROW_RADIUS,
+            Stroke::new(1.5, p.accent),
+            StrokeKind::Inside,
+        );
+    }
+    // The chevron turns with the folder.
+    let center = Pos2::new(row.left() + 12.0, row.center().y);
+    let rotation = egui::emath::Rot2::from_angle(openness * std::f32::consts::FRAC_PI_2);
+    painter.add(egui::Shape::line(
+        vec![
+            center + rotation * vec2(-2.0, -4.0),
+            center + rotation * vec2(2.0, 0.0),
+            center + rotation * vec2(-2.0, 4.0),
+        ],
+        Stroke::new(1.5, p.muted),
+    ));
+    icons::paint(
+        painter,
+        Rect::from_center_size(
+            Pos2::new(row.left() + 30.0, row.center().y),
+            Vec2::splat(16.0),
+        ),
+        Icon::Folder,
+        if selected { p.accent } else { p.secondary },
+    );
+    let trail = row.right() - 14.0;
+    let trailing = if unread > 0 { 34.0 } else { 26.0 };
+    let text_width = (trail - trailing - row.left() - 46.0).max(0.0);
+    let label = helpers::path_label(folder.folder.path(), ((text_width / 5.9).max(4.0)) as usize);
+    let path = galley_at(
+        painter,
+        Pos2::new(row.left() + 44.0, row.center().y),
+        elided(
+            painter,
+            &label,
+            theme::medium(13.0),
+            if selected || hovered {
+                p.fg
+            } else {
+                p.secondary
+            },
+            text_width,
+        ),
+    );
+    // The branch checked out in the folder itself.
+    if let Some(branch) = folder.branch.clone() {
+        let left = path.right() + 8.0;
+        let room = (trail - trailing - left - 16.0).max(0.0);
+        if room > 18.0 {
+            icons::paint(
+                painter,
+                Rect::from_center_size(Pos2::new(left + 5.5, row.center().y), Vec2::splat(11.0)),
+                Icon::Branch,
+                p.muted,
+            );
+            let named = galley_at(
+                painter,
+                Pos2::new(left + 14.0, row.center().y),
+                elided(&painter, &branch.name, theme::regular(11.0), p.muted, room),
+            );
+            if branch.dirty {
+                painter.circle_filled(
+                    Pos2::new(named.right() + 6.0, row.center().y),
+                    2.5,
+                    p.yellow,
+                );
+            }
+        }
+    }
+    if unread > 0 {
+        crate::ui::notifications::pill(
+            painter,
+            Pos2::new(row.right() - 8.0, row.center().y),
+            Align2::RIGHT_CENTER,
+            unread,
+            p,
+        );
+    } else {
+        painter.text(
+            Pos2::new(trail, row.center().y),
+            Align2::RIGHT_CENTER,
+            members.len().to_string(),
+            theme::medium(11.0),
+            p.muted,
+        );
+    }
+    response.widget_info(|| {
+        let path = folder.folder.path().display();
+        let label = match unread {
+            0 => path.to_string(),
+            1 => format!("{path}, 1 unread notification"),
+            unread => format!("{path}, {unread} unread notifications"),
+        };
+        WidgetInfo::selected(
+            WidgetType::CollapsingHeader,
+            true,
+            !folder.folder.collapsed(),
+            label,
+        )
+    });
+    if response.clicked() {
+        actions.push(Action::SetFolderCollapsed(
+            folder.folder.id(),
+            !folder.folder.collapsed(),
+        ));
+    }
+    response
+        .clone()
+        .on_hover_cursor(CursorIcon::PointingHand)
+        .context_menu(|ui| {
+            menu_layout(ui, 210.0);
+            if menu_item(ui, p, Icon::Grid, "Ungroup", "", false) {
+                actions.push(Action::SetFolderGrouped(folder.folder.id(), false));
+                ui.close();
+            }
+        });
+    response
+}
+
+/// The heading above the pinned rows, with the compact controls that order
+/// them apart from the rest of the sidebar.
+pub(super) fn pinned_header(ui: &mut Ui, p: Palette, actions: &mut Vec<Action>) {
+    let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), GROUP_HEIGHT), Sense::hover());
+    ui.painter().text(
+        row.left_center() + vec2(12.0, 0.0),
+        Align2::LEFT_CENTER,
+        "Pinned",
+        theme::medium(11.0),
+        p.muted,
+    );
+    for (offset, icon, label, salt, by) in [
+        (
+            12.0,
+            Icon::SortRecent,
+            "Sort pinned by last update",
+            "pinned-sort-recent",
+            SidebarSort::Recent,
+        ),
+        (
+            40.0,
+            Icon::SortName,
+            "Sort pinned by name",
+            "pinned-sort-name",
+            SidebarSort::Name,
+        ),
+    ] {
+        let center = Pos2::new(row.right() - offset, row.center().y);
+        if icon_at(ui, center, icon, label, "", salt).clicked() {
+            actions.push(Action::SortSidebar { pinned: true, by });
+        }
+    }
 }
 
 #[expect(
@@ -729,11 +923,25 @@ pub(super) fn sidebar_item(
                 actions,
             ))
         }
+        SidebarItem::Folder(id) => {
+            let folder = view.folders.iter().find(|f| f.folder.id() == id)?;
+            Some(workspace_folder(
+                ui,
+                p,
+                view,
+                folder,
+                viewport,
+                workspace_drag,
+                dragging,
+                geometry,
+                actions,
+            ))
+        }
         SidebarItem::Workspace(id) => {
             let index = view
                 .workspaces
                 .iter()
-                .position(|w| w.id == id && w.group.is_none())?;
+                .position(|w| w.id == id && (w.group.is_none() || w.pinned))?;
             let workspace = &view.workspaces[index];
             let machine = view
                 .workspaces
@@ -762,4 +970,3 @@ pub(super) fn sidebar_item(
         }
     }
 }
-

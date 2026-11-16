@@ -1,7 +1,7 @@
 //! The full-height sidebar and the handover of a held workspace.
-use super::*;
 use super::list::workspace_list;
 use super::menus::creation_menu;
+use super::*;
 
 /// Hand a held workspace to the native host once it leaves its source list.
 /// Reordering remains a release gesture; detaching begins while the button is
@@ -68,7 +68,6 @@ pub(super) fn workspace_detach(
     }
 }
 
-
 /// The sidebar spans the full window height, like a native source list.
 /// `state` holds its width while the edge is dragged, and a lifted workspace
 /// row. While a toggle slides it, `rect` moves past the window's leading edge.
@@ -86,6 +85,39 @@ pub fn sidebar(
     workspace_detach(ui, rect, view, state, actions);
     let strip = Rect::from_min_size(rect.min, vec2(rect.width(), metrics::TOOLBAR_HEIGHT));
     drag_region(ui, strip, "sidebar-drag");
+    // The controls that order the rows below the pinned ones, compact and
+    // beside the sidebar toggle.
+    let middle = strip.center().y;
+    let toggle = rect.left() + toggle_offset(view);
+    for (offset, icon, label, salt, by) in [
+        (
+            58.0,
+            Icon::SortName,
+            "Sort by name",
+            "sidebar-sort-name",
+            SidebarSort::Name,
+        ),
+        (
+            30.0,
+            Icon::SortRecent,
+            "Sort by last update",
+            "sidebar-sort-recent",
+            SidebarSort::Recent,
+        ),
+    ] {
+        if icon_at(
+            ui,
+            Pos2::new(toggle - offset, middle),
+            icon,
+            label,
+            "",
+            salt,
+        )
+        .clicked()
+        {
+            actions.push(Action::SortSidebar { pinned: false, by });
+        }
+    }
     // Register the backdrop first so workspace and folder menus take precedence.
     let background = ui.interact(
         Rect::from_min_max(
@@ -237,8 +269,6 @@ pub fn sidebar(
         );
     }
 }
-
-
 
 /// A small plus in the corner of a footer button: the group and the SSH
 /// button carry one, so it is clear that they create something.

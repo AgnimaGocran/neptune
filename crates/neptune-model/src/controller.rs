@@ -1,5 +1,5 @@
 use crate::{
-    Axis, Edge, Error, Layout, Lifecycle, Limits, Model, Pane, PaneId, PaneKind, Project,
+    Axis, Edge, Error, FolderId, Layout, Lifecycle, Limits, Model, Pane, PaneId, PaneKind, Project,
     ProjectId, ProjectKey, Remote, SidebarItem, SplitId, Window, WindowId, Workspace,
     WorkspaceGroup, WorkspaceGroupId, WorkspaceId,
 };
@@ -56,6 +56,16 @@ pub enum Command {
         group: WorkspaceGroupId,
         collapsed: bool,
     },
+    /// Shows, or stops showing, one row for the workspaces of a directory.
+    SetFolderGrouped {
+        folder: FolderId,
+        grouped: bool,
+    },
+    /// Closes or opens the folder the workspaces of one directory share.
+    SetFolderCollapsed {
+        folder: FolderId,
+        collapsed: bool,
+    },
     /// Changes only the starting directory of future local workspaces.
     SetWorkspaceGroupDefaultDirectory {
         group: WorkspaceGroupId,
@@ -79,6 +89,20 @@ pub enum Command {
         item: SidebarItem,
         index: usize,
     },
+    /// Keeps a workspace at the top of the sidebar in a row of its own, or
+    /// returns it to its group or folder.
+    SetWorkspacePinned {
+        workspace: WorkspaceId,
+        pinned: bool,
+    },
+    /// Names a workspace's row by the command it runs; empty clears it.
+    SetWorkspaceCommand {
+        workspace: WorkspaceId,
+        command: String,
+    },
+    /// Takes the sidebar's top-level rows in the given order: one of each,
+    /// nothing unknown. Pinned rows stay at the top.
+    ReorderSidebar(Vec<SidebarItem>),
     SelectWorkspace(WorkspaceId),
     SplitPane {
         workspace: WorkspaceId,
@@ -297,6 +321,18 @@ pub enum Completion {
     },
 }
 
+/// One line of a command: no control characters, bounded, trimmed. Empty
+/// clears the row's label.
+fn sanitize_command(command: &str) -> String {
+    command
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(500)
+        .collect::<String>()
+        .trim()
+        .to_owned()
+}
+
 #[derive(Debug, Clone)]
 pub struct Controller {
     model: Model,
@@ -494,6 +530,8 @@ impl Controller {
                     id,
                     window: self.model.current_window,
                     group,
+                    pinned: false,
+                    command: String::new(),
                     name,
                     cwd: cwd.clone(),
                     remote: remote.clone(),
@@ -526,7 +564,7 @@ impl Controller {
                 dirty = true;
             }
             Command::CloneWorkspace(workspace) => {
-                let (group, window, name, remote, cwd, remote_cwd) = {
+                let (group, pinned, command, window, name, remote, cwd, remote_cwd) = {
                     let source = self
                         .model
                         .workspace(workspace)
@@ -537,6 +575,8 @@ impl Controller {
                         .ok_or(Error::UnknownPane(source.active))?;
                     (
                         source.group,
+                        source.pinned,
+                        source.command.clone(),
                         source.window,
                         source.name.clone(),
                         source.remote.clone(),
@@ -573,6 +613,8 @@ impl Controller {
                         id,
                         window,
                         group,
+                        pinned,
+                        command,
                         name,
                         cwd: cwd.clone(),
                         remote: remote.clone(),
@@ -597,11 +639,12 @@ impl Controller {
                 // An ungrouped copy holds a top-level place of its own, below
                 // its source; a grouped one is ordered within its folder.
                 if group.is_none()
+                    && let Some(entry) = self.model.entry_of(workspace)
                     && let Some(top) = self
                         .model
                         .sidebar_order
                         .iter()
-                        .position(|item| *item == SidebarItem::Workspace(workspace))
+                        .position(|item| *item == entry)
                 {
                     self.model
                         .sidebar_order
@@ -654,6 +697,28 @@ impl Controller {
                 let folder = self.model.group_mut(group)?;
                 if folder.collapsed != collapsed {
                     folder.collapsed = collapsed;
+                    dirty = true;
+                }
+            }
+            Command::SetFolderCollapsed { folder, collapsed } => {
+                let folder = self.model.folder_mut(folder)?;
+                if folder.collapsed != collapsed {
+                    folder.collapsed = collapsed;
+                    dirty = true;
+                }
+            }
+            Command::SetFolderGrouped { folder, grouped } => {
+                let changed = {
+                    let folder = self.model.folder_mut(folder)?;
+                    if folder.grouped == grouped {
+                        false
+                    } else {
+                        folder.grouped = grouped;
+                        true
+                    }
+                };
+                if changed {
+                    self.model.order_workspaces();
                     dirty = true;
                 }
             }
@@ -733,6 +798,34 @@ impl Controller {
             }
             Command::MoveSidebarItem { item, index } => {
                 dirty = self.move_sidebar_item(item, index)?;
+            }
+            Command::SetWorkspacePinned { workspace, pinned } => {
+                if self
+                    .model
+                    .workspace(workspace)
+                    .ok_or(Error::UnknownWorkspace(workspace))?
+                    .pinned()
+                    != pinned
+                {
+                    self.model.workspace_mut(workspace)?.pinned = pinned;
+                    self.model.order_workspaces();
+                    dirty = true;
+                }
+            }
+            Command::SetWorkspaceCommand { workspace, command } => {
+                let command = sanitize_command(&command);
+                let current = self
+                    .model
+                    .workspace(workspace)
+                    .ok_or(Error::UnknownWorkspace(workspace))?;
+                if current.command() != command {
+                    self.model.workspace_mut(workspace)?.command = command;
+                    dirty = true;
+                }
+            }
+            Command::ReorderSidebar(order) => {
+                self.model.set_sidebar_order(order)?;
+                dirty = true;
             }
             Command::SelectWorkspace(id) => {
                 let owner = self
@@ -885,11 +978,14 @@ impl Controller {
                     .ok_or(Error::UnknownWorkspace(workspace))?;
                 let index = index.min(self.model.workspaces.len() - 1);
                 if index != position {
-                    if self.model.workspaces[position].group.is_none() {
-                        let target = &self.model.workspaces[index];
-                        let target = target
-                            .group
-                            .map_or(SidebarItem::Workspace(target.id), SidebarItem::Group);
+                    if self.model.workspaces[position].group.is_none()
+                        && self.model.folder_of(workspace).is_none()
+                    {
+                        let target = self.model.workspaces[index].id;
+                        let target = self
+                            .model
+                            .entry_of(target)
+                            .ok_or(Error::InvalidSidebarOrder)?;
                         let target_index = self
                             .model
                             .sidebar_order
@@ -1741,7 +1837,7 @@ impl Controller {
                     .model
                     .workspace(id)
                     .ok_or(Error::UnknownWorkspace(id))?;
-                if workspace.group().is_some() {
+                if workspace.group().is_some() && !workspace.pinned() {
                     return Err(Error::InvalidSidebarOrder);
                 }
             }
@@ -1749,6 +1845,9 @@ impl Controller {
                 self.model
                     .group(id)
                     .ok_or(Error::UnknownWorkspaceGroup(id))?;
+            }
+            SidebarItem::Folder(id) => {
+                self.model.folder(id).ok_or(Error::UnknownFolder(id))?;
             }
         }
         let position = self
@@ -2043,10 +2142,13 @@ mod tests {
     }
 
     fn create(controller: &mut Controller, name: &str) -> WorkspaceId {
+        create_in(controller, name, "/fake")
+    }
+    fn create_in(controller: &mut Controller, name: &str, cwd: &str) -> WorkspaceId {
         controller
             .dispatch(Command::AddWorkspace {
                 group: None,
-                cwd: PathBuf::from("/fake"),
+                cwd: PathBuf::from(cwd),
                 name: name.into(),
                 remote: None,
             })
@@ -2058,6 +2160,167 @@ mod tests {
         let workspace = create(&mut controller, "main");
         let pane = controller.model().active_pane().unwrap();
         (controller, workspace, pane)
+    }
+
+    #[test]
+    fn a_pinned_workspace_leaves_its_group_and_returns_to_it() {
+        let mut controller = Controller::new(Model::default());
+        let first = create_in(&mut controller, "one", "/one");
+        let second = create_in(&mut controller, "two", "/two");
+        controller
+            .dispatch(Command::AddWorkspaceGroup {
+                name: "work".into(),
+            })
+            .unwrap();
+        let group = controller.model().groups()[0].id();
+        controller
+            .dispatch(Command::SetWorkspaceGroup {
+                workspace: second,
+                group: Some(group),
+            })
+            .unwrap();
+        controller
+            .dispatch(Command::SetWorkspacePinned {
+                workspace: second,
+                pinned: true,
+            })
+            .unwrap();
+        assert!(controller.model().workspace(second).unwrap().pinned());
+        // The pinned row stands above everything, apart from its group.
+        assert_eq!(
+            controller.model().sidebar_order(),
+            [
+                SidebarItem::Workspace(second),
+                SidebarItem::Workspace(first),
+                SidebarItem::Group(group),
+            ]
+        );
+        // Sorting the rest cannot push a pinned row below.
+        controller
+            .dispatch(Command::ReorderSidebar(vec![
+                SidebarItem::Workspace(first),
+                SidebarItem::Workspace(second),
+                SidebarItem::Group(group),
+            ]))
+            .unwrap();
+        assert_eq!(
+            controller.model().sidebar_order()[0],
+            SidebarItem::Workspace(second)
+        );
+        controller
+            .dispatch(Command::SetWorkspacePinned {
+                workspace: second,
+                pinned: false,
+            })
+            .unwrap();
+        assert!(!controller.model().workspace(second).unwrap().pinned());
+        assert_eq!(
+            controller.model().sidebar_order(),
+            [SidebarItem::Workspace(first), SidebarItem::Group(group),]
+        );
+    }
+
+    #[test]
+    fn ungrouping_a_directory_gives_each_workspace_its_own_row() {
+        let mut controller = Controller::new(Model::default());
+        let one = create_in(&mut controller, "one", "/srv/shared");
+        let two = create_in(&mut controller, "two", "/srv/shared");
+        let folder = match controller.model().sidebar_order()[0] {
+            SidebarItem::Folder(folder) => folder,
+            other => panic!("expected a folder row, found {other:?}"),
+        };
+        controller
+            .dispatch(Command::SetFolderGrouped {
+                folder,
+                grouped: false,
+            })
+            .unwrap();
+        assert_eq!(
+            controller.model().sidebar_order(),
+            [SidebarItem::Workspace(one), SidebarItem::Workspace(two)]
+        );
+        assert!(!controller.model().folder(folder).unwrap().grouped());
+        // The choice is saved, and grouping again restores the row.
+        assert!(!controller.model().folder_specs()[0].grouped);
+        controller
+            .dispatch(Command::SetFolderGrouped {
+                folder,
+                grouped: true,
+            })
+            .unwrap();
+        assert_eq!(
+            controller.model().sidebar_order(),
+            [SidebarItem::Folder(folder)]
+        );
+    }
+
+    #[test]
+    fn a_workspace_row_is_named_by_one_sanitised_command_line() {
+        let mut controller = Controller::new(Model::default());
+        let workspace = create(&mut controller, "web");
+        controller
+            .dispatch(Command::SetWorkspaceCommand {
+                workspace,
+                command: "  cargo dev\nserver  ".into(),
+            })
+            .unwrap();
+        assert_eq!(
+            controller.model().workspace(workspace).unwrap().command(),
+            "cargo devserver"
+        );
+        assert_eq!(controller.model().specs()[0].command, "cargo devserver");
+        controller
+            .dispatch(Command::SetWorkspaceCommand {
+                workspace,
+                command: "   ".into(),
+            })
+            .unwrap();
+        assert_eq!(
+            controller.model().workspace(workspace).unwrap().command(),
+            ""
+        );
+    }
+
+    #[test]
+    fn a_reordered_sidebar_refuses_rows_that_are_unknown_or_repeated() {
+        let mut controller = Controller::new(Model::default());
+        let first = create_in(&mut controller, "one", "/one");
+        let second = create_in(&mut controller, "two", "/two");
+        controller
+            .dispatch(Command::ReorderSidebar(vec![
+                SidebarItem::Workspace(second),
+                SidebarItem::Workspace(first),
+            ]))
+            .unwrap();
+        assert_eq!(
+            controller.model().sidebar_order(),
+            [
+                SidebarItem::Workspace(second),
+                SidebarItem::Workspace(first),
+            ]
+        );
+        assert!(
+            controller
+                .dispatch(Command::ReorderSidebar(vec![
+                    SidebarItem::Workspace(first),
+                    SidebarItem::Workspace(first),
+                ]))
+                .is_err()
+        );
+        assert!(
+            controller
+                .dispatch(Command::ReorderSidebar(vec![SidebarItem::Workspace(
+                    WorkspaceId::new(99)
+                )]))
+                .is_err()
+        );
+        assert_eq!(
+            controller.model().sidebar_order(),
+            [
+                SidebarItem::Workspace(second),
+                SidebarItem::Workspace(first),
+            ]
+        );
     }
 
     #[test]
@@ -3169,6 +3432,7 @@ mod tests {
             let restored = Model::restore_with_projects(
                 model.specs(),
                 model.group_specs(),
+                model.folder_specs(),
                 Some(model.sidebar_order().to_vec()),
                 model.project_specs(),
                 model.active_workspace(),
@@ -3681,6 +3945,8 @@ mod tests {
     fn restoration_rejects_duplicate_missing_leaves_and_invalid_ratios() {
         let mut spec = WorkspaceSpec {
             group: None,
+            pinned: false,
+            command: String::new(),
             id: WorkspaceId::new(1),
             name: "fixture".into(),
             cwd: PathBuf::new(),
@@ -3770,7 +4036,9 @@ mod tests {
             .unwrap();
         let below = create(&mut controller, "other");
 
-        let effects = controller.dispatch(Command::CloneWorkspace(source)).unwrap();
+        let effects = controller
+            .dispatch(Command::CloneWorkspace(source))
+            .unwrap();
         let clone = controller.model().active_workspace().unwrap();
         assert_ne!(clone, source);
         let order: Vec<_> = controller
@@ -3779,7 +4047,13 @@ mod tests {
             .iter()
             .map(Workspace::id)
             .collect();
-        assert_eq!(order, [source, clone, below], "a copy sits under its source");
+        // The copy works where its source does, so it joins another folder
+        // and takes its row right after the row the source stands in.
+        assert_eq!(
+            order,
+            [source, below, clone],
+            "a copy follows the row its source stands in"
+        );
 
         let copy = controller.model().workspace(clone).unwrap();
         assert_eq!(copy.name(), "app");
@@ -3789,7 +4063,11 @@ mod tests {
             std::path::Path::new("/elsewhere"),
             "the folder its source works in"
         );
-        assert_eq!(copy.panes().len(), 1, "a fresh shell, not the source's panes");
+        assert_eq!(
+            copy.panes().len(),
+            1,
+            "a fresh shell, not the source's panes"
+        );
         let fresh = copy.active();
         let pane = copy.pane(fresh).unwrap();
         assert_eq!(pane.kind(), PaneKind::Terminal);
@@ -3874,10 +4152,10 @@ mod group_tests {
     #[test]
     fn mixed_sidebar_moves_preserve_sessions_and_drive_navigation_and_restoration() {
         let mut controller = Controller::new(Model::default());
-        for name in ["first", "second"] {
+        for (name, cwd) in [("first", "/fake"), ("second", "/other")] {
             controller
                 .dispatch(Command::AddWorkspace {
-                    cwd: "/fake".into(),
+                    cwd: cwd.into(),
                     name: name.into(),
                     remote: None,
                     group: None,
@@ -3942,6 +4220,7 @@ mod group_tests {
             let restored = Model::restore_ordered(
                 controller.model().specs(),
                 controller.model().group_specs(),
+                controller.model().folder_specs(),
                 Some(controller.model().sidebar_order().to_owned()),
                 active,
                 true,
@@ -3992,6 +4271,7 @@ mod group_tests {
                 Model::restore_ordered(
                     before.specs(),
                     before.group_specs(),
+                    before.folder_specs(),
                     Some(invalid),
                     active,
                     true,
@@ -4005,10 +4285,10 @@ mod group_tests {
     #[test]
     fn removing_a_mixed_group_replaces_it_with_its_children_in_place() {
         let mut controller = Controller::new(Model::default());
-        for name in ["first", "second"] {
+        for (name, cwd) in [("first", "/fake"), ("second", "/other")] {
             controller
                 .dispatch(Command::AddWorkspace {
-                    cwd: "/fake".into(),
+                    cwd: cwd.into(),
                     name: name.into(),
                     remote: None,
                     group: None,
@@ -4023,7 +4303,7 @@ mod group_tests {
         let group = controller.model().groups()[0].id();
         controller
             .dispatch(Command::AddWorkspace {
-                cwd: "/fake".into(),
+                cwd: "/third".into(),
                 name: "child".into(),
                 remote: None,
                 group: Some(group),
@@ -4412,6 +4692,7 @@ mod group_tests {
         let restored = Model::restore_ordered(
             controller.model().specs(),
             controller.model().group_specs(),
+            controller.model().folder_specs(),
             Some(controller.model().sidebar_order().to_vec()),
             controller.model().active_workspace(),
             true,
@@ -4508,7 +4789,14 @@ mod group_tests {
         let mut groups = controller.model().group_specs();
         groups[0].default_directory = Some("relative".into());
         assert_eq!(
-            Model::restore_grouped(Vec::new(), groups, None, true, crate::Limits::default()),
+            Model::restore_grouped(
+                Vec::new(),
+                groups,
+                Vec::new(),
+                None,
+                true,
+                crate::Limits::default()
+            ),
             Err(Error::InvalidDirectory)
         );
         controller
@@ -4556,6 +4844,7 @@ mod group_tests {
         let restored = Model::restore_grouped(
             specs.clone(),
             groups.clone(),
+            Vec::new(),
             controller.model().active_workspace(),
             false,
             crate::Limits::default(),
@@ -4567,6 +4856,7 @@ mod group_tests {
             Model::restore_grouped(
                 specs.clone(),
                 Vec::new(),
+                Vec::new(),
                 None,
                 true,
                 crate::Limits::default()
@@ -4576,14 +4866,169 @@ mod group_tests {
         let mut invalid = groups.clone();
         invalid.push(groups[0].clone());
         assert_eq!(
-            Model::restore_grouped(specs.clone(), invalid, None, true, crate::Limits::default()),
+            Model::restore_grouped(
+                specs.clone(),
+                invalid,
+                Vec::new(),
+                None,
+                true,
+                crate::Limits::default()
+            ),
             Err(Error::InvalidIdentity)
         );
         let mut invalid = groups;
         invalid[0].id = WorkspaceGroupId::new(0);
         assert_eq!(
-            Model::restore_grouped(specs, invalid, None, true, crate::Limits::default()),
+            Model::restore_grouped(
+                specs,
+                invalid,
+                Vec::new(),
+                None,
+                true,
+                crate::Limits::default()
+            ),
             Err(Error::InvalidIdentity)
+        );
+    }
+}
+
+#[cfg(test)]
+mod folder_tests {
+    use super::*;
+    use crate::Limits;
+
+    fn create(controller: &mut Controller, name: &str, cwd: &str) -> WorkspaceId {
+        controller
+            .dispatch(Command::AddWorkspace {
+                cwd: cwd.into(),
+                name: name.into(),
+                remote: None,
+                group: None,
+            })
+            .unwrap();
+        controller.model().active_workspace().unwrap()
+    }
+
+    #[test]
+    fn workspaces_started_in_one_directory_share_a_folder_that_closes() {
+        let mut controller = Controller::new(Model::default());
+        let first = create(&mut controller, "first", "/app");
+        let second = create(&mut controller, "second", "/app");
+        let other = create(&mut controller, "other", "/elsewhere");
+        let model = controller.model();
+        assert_eq!(model.folders().len(), 1);
+        let folder = model.folders()[0].id();
+        assert_eq!(model.folders()[0].path(), std::path::Path::new("/app"));
+        assert!(!model.folders()[0].collapsed());
+        assert_eq!(
+            model.sidebar_order(),
+            [SidebarItem::Workspace(other), SidebarItem::Folder(folder)]
+        );
+        assert_eq!(
+            model
+                .folder_workspaces(folder)
+                .map(Workspace::id)
+                .collect::<Vec<_>>(),
+            [first, second]
+        );
+        assert_eq!(model.folder_of(first), Some(folder));
+        assert_eq!(model.folder_of(other), None);
+        let generation = controller.generation();
+        assert_eq!(
+            controller
+                .dispatch(Command::SetFolderCollapsed {
+                    folder,
+                    collapsed: true
+                })
+                .unwrap(),
+            [Effect::Persist {
+                generation: generation + 1
+            }]
+        );
+        assert!(controller.model().folder(folder).unwrap().collapsed());
+        assert_eq!(
+            controller.model().folder_specs(),
+            [crate::FolderSpec {
+                id: folder,
+                path: "/app".into(),
+                collapsed: true,
+                grouped: true
+            }]
+        );
+    }
+
+    #[test]
+    fn a_folder_leaves_with_its_second_workspace() {
+        let mut controller = Controller::new(Model::default());
+        let first = create(&mut controller, "first", "/app");
+        create(&mut controller, "second", "/app");
+        controller.dispatch(Command::CloseWorkspace(first)).unwrap();
+        let model = controller.model();
+        assert!(model.folders().is_empty());
+        assert!(matches!(model.sidebar_order(), [SidebarItem::Workspace(_)]));
+    }
+
+    #[test]
+    fn a_saved_folder_reopens_with_its_place_and_state() {
+        let mut controller = Controller::new(Model::default());
+        create(&mut controller, "first", "/app");
+        create(&mut controller, "second", "/app");
+        let other = create(&mut controller, "other", "/elsewhere");
+        let folder = controller.model().folders()[0].id();
+        controller
+            .dispatch(Command::SetFolderCollapsed {
+                folder,
+                collapsed: true,
+            })
+            .unwrap();
+        let model = controller.model();
+        let restored = Model::restore_ordered(
+            model.specs(),
+            model.group_specs(),
+            model.folder_specs(),
+            Some(model.sidebar_order().to_vec()),
+            None,
+            true,
+            Limits::default(),
+        )
+        .unwrap();
+        assert_eq!(restored.folder_specs(), model.folder_specs());
+        assert_eq!(restored.sidebar_order(), model.sidebar_order());
+        assert_eq!(restored.folders()[0].path(), std::path::Path::new("/app"));
+        assert!(restored.folders()[0].collapsed());
+        assert_eq!(restored.folder_of(other), None);
+    }
+
+    #[test]
+    fn an_order_saved_before_folders_keeps_the_rows_it_lists() {
+        // A sidebar saved before folders lists the workspaces themselves at the
+        // top level; the first of a folder names where the folder stands.
+        let mut controller = Controller::new(Model::default());
+        let first = create(&mut controller, "first", "/app");
+        let other = create(&mut controller, "other", "/elsewhere");
+        let second = create(&mut controller, "second", "/app");
+        let model = controller.model();
+        let restored = Model::restore_ordered(
+            model.specs(),
+            Vec::new(),
+            Vec::new(),
+            Some(vec![
+                SidebarItem::Workspace(other),
+                SidebarItem::Workspace(first),
+                SidebarItem::Workspace(second),
+            ]),
+            None,
+            true,
+            Limits::default(),
+        )
+        .unwrap();
+        assert_eq!(restored.folders().len(), 1);
+        assert_eq!(
+            restored.sidebar_order(),
+            [
+                SidebarItem::Workspace(other),
+                SidebarItem::Folder(restored.folders()[0].id())
+            ]
         );
     }
 }

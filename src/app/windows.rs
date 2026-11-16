@@ -64,10 +64,11 @@ mod tests {
         app.startup = None;
         app.command = None;
         let mut workspaces = Vec::new();
-        for name in ["One", "Two", "Three"] {
+        // One directory each, so the sidebar lists them as plain rows.
+        for (index, name) in ["One", "Two", "Three"].into_iter().enumerate() {
             app.controller
                 .dispatch(Command::AddWorkspace {
-                    cwd: root.into(),
+                    cwd: root.join(index.to_string()),
                     name: name.into(),
                     group: None,
                     remote: None,
@@ -1148,7 +1149,9 @@ impl App {
         let model = self.controller.model();
         let owner = match item {
             neptune_model::SidebarItem::Workspace(id) => model.workspace(id).map(|w| w.window()),
-            neptune_model::SidebarItem::Group(_) => Some(model.current_window()),
+            neptune_model::SidebarItem::Group(_) | neptune_model::SidebarItem::Folder(_) => {
+                Some(model.current_window())
+            }
         };
         let Some(owner) = owner else {
             self.dispatch(ctx, Command::MoveSidebarItem { item, index });
@@ -1162,7 +1165,9 @@ impl App {
                 neptune_model::SidebarItem::Workspace(id) => {
                     model.workspace(*id).is_some_and(|w| w.window() == owner)
                 }
-                neptune_model::SidebarItem::Group(_) => true,
+                neptune_model::SidebarItem::Group(_) | neptune_model::SidebarItem::Folder(_) => {
+                    true
+                }
             })
             .collect();
         let Some(target) = visible.get(index.min(visible.len().saturating_sub(1))) else {
@@ -1172,6 +1177,82 @@ impl App {
             return;
         };
         self.dispatch(ctx, Command::MoveSidebarItem { item, index });
+    }
+
+    /// Orders the sidebar once, for the pinned rows or for everything else:
+    /// by name, or with the workspace whose terminal wrote most recently
+    /// first. The order is saved like any other.
+    pub(super) fn sort_sidebar(
+        &mut self,
+        ctx: &egui::Context,
+        pinned: bool,
+        by: crate::ui::SidebarSort,
+    ) {
+        use crate::ui::SidebarSort;
+        use neptune_model::SidebarItem;
+        let model = self.controller.model();
+        let order = model.sidebar_order().to_vec();
+        let split = order
+            .iter()
+            .take_while(|item| match item {
+                SidebarItem::Workspace(id) => model
+                    .workspace(*id)
+                    .is_some_and(|workspace| workspace.pinned()),
+                _ => false,
+            })
+            .count();
+        let (block, rest) = if pinned {
+            (&order[..split], &order[split..])
+        } else {
+            (&order[split..], &order[..split])
+        };
+        let name = |item: &SidebarItem| match item {
+            SidebarItem::Workspace(id) => model
+                .workspace(*id)
+                .map_or_else(String::new, |workspace| workspace.name().to_owned()),
+            SidebarItem::Group(id) => model
+                .group(*id)
+                .map_or_else(String::new, |group| group.name().to_owned()),
+            SidebarItem::Folder(id) => model.folder(*id).map_or_else(String::new, |folder| {
+                folder.path().file_name().map_or_else(
+                    || folder.path().display().to_string(),
+                    |name| name.to_string_lossy().into_owned(),
+                )
+            }),
+        };
+        let recent = |item: &SidebarItem| -> Option<Instant> {
+            match item {
+                SidebarItem::Workspace(id) => self.activity.get(id).copied(),
+                SidebarItem::Group(id) => model
+                    .workspaces()
+                    .iter()
+                    .filter(|workspace| workspace.group() == Some(*id) && !workspace.pinned())
+                    .filter_map(|workspace| self.activity.get(&workspace.id()).copied())
+                    .max(),
+                SidebarItem::Folder(id) => model
+                    .folder_workspaces(*id)
+                    .filter_map(|workspace| self.activity.get(&workspace.id()).copied())
+                    .max(),
+            }
+        };
+        let mut rows: Vec<(String, Option<Instant>, SidebarItem)> = block
+            .iter()
+            .map(|item| (name(item), recent(item), *item))
+            .collect();
+        rows.sort_by(|a, b| match by {
+            SidebarSort::Name => a.0.to_lowercase().cmp(&b.0.to_lowercase()),
+            SidebarSort::Recent => b.1.cmp(&a.1),
+        });
+        let mut sorted = Vec::with_capacity(order.len());
+        let rows = rows.into_iter().map(|(_, _, item)| item);
+        if pinned {
+            sorted.extend(rows);
+            sorted.extend_from_slice(rest);
+        } else {
+            sorted.extend_from_slice(rest);
+            sorted.extend(rows);
+        }
+        self.dispatch(ctx, Command::ReorderSidebar(sorted));
     }
 
     pub(super) fn reconcile_window_selection(&mut self) {
