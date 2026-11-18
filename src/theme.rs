@@ -438,8 +438,13 @@ pub fn apply(ctx: &egui::Context, config: &Config) {
     style.spacing.window_margin = egui::Margin::same(16);
     style.spacing.menu_margin = egui::Margin::same(5);
     style.spacing.interact_size.y = 28.0;
-    style.spacing.scroll.floating = true;
-    style.spacing.scroll.bar_width = 6.0;
+    // Solid bars: a floating one fades out between scrolls, so a long sidebar
+    // or dialog gave no sign that it could scroll at all.
+    style.spacing.scroll.floating = false;
+    style.spacing.scroll.bar_width = 8.0;
+    style.spacing.scroll.bar_inner_margin = 2.0;
+    style.spacing.scroll.bar_outer_margin = 4.0;
+    style.spacing.scroll.foreground_color = true;
     style.interaction.tooltip_delay = 0.45;
     style.animation_time = 0.12;
     for (text_style, size) in [
