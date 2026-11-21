@@ -52,8 +52,6 @@ pub enum OverlayState {
     Update,
     Palette,
     Rename(WorkspaceId),
-    /// Name a workspace's row by a command.
-    Command(WorkspaceId),
     GroupDefaultDirectory(WorkspaceGroupId),
     RenameGroup(WorkspaceGroupId),
     NewGroup,
@@ -225,12 +223,6 @@ pub enum Action {
     /// Keeps a workspace's row at the top of the sidebar, or returns it to
     /// its group or folder.
     SetPinned(WorkspaceId, bool),
-    /// Names a workspace's row by a command; an empty one clears it.
-    SetCommand(WorkspaceId, String),
-    /// Opens the command sheet for a workspace.
-    EditCommand(WorkspaceId),
-    /// Runs the command a workspace's row is named by.
-    RunCommand(WorkspaceId),
     /// Orders the sidebar once, by name or by how recently each terminal
     /// wrote: the pinned rows, or everything else.
     SortSidebar {

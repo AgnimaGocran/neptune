@@ -69,7 +69,6 @@ fn rename(
         OverlayState::RenameProject(_) => {
             ("Rename project", "Project name", "Project rename", "Save")
         }
-        OverlayState::Command(_) => ("Set command", "Command", "Workspace command", "Save"),
         _ => (
             "Rename workspace",
             "Workspace name",
@@ -89,7 +88,6 @@ fn rename(
                 Id::new(match target {
                     OverlayState::Rename(_) => "workspace-rename",
                     OverlayState::RenameProject(_) => "project-rename",
-                    OverlayState::Command(_) => "workspace-command",
                     _ => "workspace-group-name",
                 }),
                 &mut state.rename_name,
@@ -110,15 +108,12 @@ fn rename(
     });
     if cancel || output.backdrop_clicked {
         actions.push(Action::CloseOverlay);
-    } else if save
-        && (matches!(target, OverlayState::Command(_)) || !state.rename_name.trim().is_empty())
-    {
+    } else if save && !state.rename_name.trim().is_empty() {
         let name = state.rename_name.trim().to_owned();
         actions.push(match target {
             OverlayState::NewGroup => Action::CreateGroup(name),
             OverlayState::RenameGroup(group) => Action::SetGroupName(group, name),
             OverlayState::Rename(workspace) => Action::SetName(workspace, name),
-            OverlayState::Command(workspace) => Action::SetCommand(workspace, name),
             OverlayState::RenameProject(project) => {
                 Action::Project(super::project::Event::SetName(project, name))
             }
@@ -615,7 +610,6 @@ pub fn show(ctx: &egui::Context, p: Palette, state: &mut UiState, actions: &mut 
             default_directory(ctx, p, state, group, actions)
         }
         target @ (OverlayState::Rename(_)
-        | OverlayState::Command(_)
         | OverlayState::RenameGroup(_)
         | OverlayState::RenameProject(_)
         | OverlayState::NewGroup) => rename(ctx, p, state, target, actions),
