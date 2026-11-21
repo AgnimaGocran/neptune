@@ -52,8 +52,6 @@ struct Fixture {
     pinned: Vec<u64>,
     /// The folder branch each row stands under.
     folder_membership: Vec<(u64, FolderId)>,
-    /// The command each row is named by.
-    commands: Vec<(u64, String)>,
     /// The folder rows the sidebar shows.
     folder_views: Vec<FolderView>,
     sidebar_order: Vec<SidebarItem>,
@@ -81,7 +79,6 @@ impl Fixture {
             membership: Vec::new(),
             pinned: Vec::new(),
             folder_membership: Vec::new(),
-            commands: Vec::new(),
             folder_views: Vec::new(),
             sidebar_order: order
                 .iter()
@@ -110,13 +107,6 @@ impl Fixture {
                 .iter()
                 .find(|(id, _)| *id == workspace.id.get())
                 .map(|(_, folder)| *folder);
-            if let Some((_, command)) = self
-                .commands
-                .iter()
-                .find(|(id, _)| *id == workspace.id.get())
-            {
-                workspace.command = command.clone();
-            }
         }
         let view = ChromeView {
             keybindings: &Default::default(),
@@ -1133,30 +1123,5 @@ fn pinned_rows_stand_under_a_heading_that_sorts_them_apart() {
             }]
         ),
         "the heading did not offer its own sort"
-    );
-}
-
-#[test]
-fn a_command_row_runs_it_from_its_button() {
-    let mut fixture = Fixture::new(&[1]);
-    fixture.commands.push((1, "make test".to_owned()));
-    fixture.frame(vec![]);
-    fixture.actions.clear();
-    let at = Pos2::new(216.0 - 40.0, row(0).y);
-    fixture.frame(vec![button(at, true)]);
-    fixture.frame(vec![button(at, false)]);
-    assert!(
-        fixture
-            .actions
-            .iter()
-            .any(|action| matches!(action, Action::RunCommand(id) if id.get() == 1)),
-        "the row's button runs its command"
-    );
-    assert!(
-        !fixture
-            .actions
-            .iter()
-            .any(|action| matches!(action, Action::SelectWorkspace(_))),
-        "the button does not also select the row"
     );
 }

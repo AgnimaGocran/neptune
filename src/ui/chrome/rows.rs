@@ -143,16 +143,8 @@ pub(super) fn workspace_row(
     // An unread count takes the trailing edge; wider counts need more room.
     let trailing = if workspace.unread > 0 {
         crate::ui::notifications::pill_width(workspace.unread) + 14.0
-    } else if workspace.command.is_empty() {
+    } else {
         30.0
-    } else {
-        52.0
-    };
-    // A row named by a command shows that command instead of the name.
-    let label = if workspace.command.is_empty() {
-        workspace.name.as_str()
-    } else {
-        workspace.command.as_str()
     };
     let text_width = row.right() - text_left - trailing;
     galley_at(
@@ -160,7 +152,7 @@ pub(super) fn workspace_row(
         Pos2::new(name_left, row.center().y + 1.0),
         elided(
             &painter,
-            label,
+            &workspace.name,
             theme::medium(13.0),
             if selected || hovered || workspace.unread > 0 {
                 p.fg
@@ -254,9 +246,9 @@ pub(super) fn workspace_row(
 
     response.widget_info(|| {
         let label = match workspace.unread {
-            0 => label.to_owned(),
-            1 => format!("{label}, 1 unread notification"),
-            unread => format!("{label}, {unread} unread notifications"),
+            0 => workspace.name.clone(),
+            1 => format!("{}, 1 unread notification", workspace.name),
+            unread => format!("{}, {unread} unread notifications", workspace.name),
         };
         WidgetInfo::selected(WidgetType::SelectableLabel, true, selected, label)
     });
@@ -320,41 +312,6 @@ pub(super) fn workspace_row(
         );
     }
     egui::Popup::menu(&more_response).show(|ui| workspace_menu(ui, p, workspace, view, actions));
-    // A row named by a command runs it again from its own button.
-    if !workspace.command.is_empty() && !dragging && pane_drag.is_none() {
-        let run = Rect::from_center_size(
-            Pos2::new(row.right() - 40.0, row.center().y),
-            Vec2::splat(20.0),
-        );
-        let run_response = ui.interact(
-            run,
-            ui.id().with(("workspace-run", workspace.id.get())),
-            Sense::click(),
-        );
-        run_response.widget_info(|| {
-            WidgetInfo::labeled(
-                WidgetType::Button,
-                true,
-                format!("Run the command of {}", workspace.name),
-            )
-        });
-        if run_response.hovered() {
-            painter.rect_filled(run, 5, p.pressed);
-        }
-        icons::paint(
-            &painter,
-            run.shrink(4.0),
-            Icon::Play,
-            if run_response.hovered() {
-                p.fg
-            } else {
-                p.secondary
-            },
-        );
-        if run_response.clicked() {
-            actions.push(Action::RunCommand(workspace.id));
-        }
-    }
     response
 }
 

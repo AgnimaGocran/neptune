@@ -40,14 +40,6 @@ pub(super) fn workspace_menu(
         actions.push(Action::Rename(workspace.id));
         ui.close();
     }
-    if menu_item(ui, p, Icon::Terminal, "Set command…", "", false) {
-        actions.push(Action::EditCommand(workspace.id));
-        ui.close();
-    }
-    if !workspace.command.is_empty() && menu_item(ui, p, Icon::Play, "Run command", "", false) {
-        actions.push(Action::RunCommand(workspace.id));
-        ui.close();
-    }
     if menu_item(ui, p, Icon::Copy, "Duplicate", "", false) {
         actions.push(Action::CloneWorkspace(workspace.id));
         ui.close();
