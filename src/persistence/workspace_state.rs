@@ -279,6 +279,13 @@ pub struct SavedPane {
     /// The files the agent attached, from schema version 11.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attachments: Vec<SavedAttachment>,
+    /// A command row under a workspace's row, written by a build that had
+    /// them: read and dropped, so a file it saved still opens.
+    #[serde(default)]
+    pub mini: bool,
+    /// What that shell ran; likewise read and dropped.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub command: String,
 }
 
 /// Where an attached file is and what the agent called it; never its contents.
@@ -367,6 +374,8 @@ impl StateSnapshot {
                                     title: file.title().map(str::to_owned),
                                 })
                                 .collect(),
+                            mini: false,
+                            command: String::new(),
                         })
                         .collect(),
                     layout: SavedLayout::from_layout(workspace.layout()),
