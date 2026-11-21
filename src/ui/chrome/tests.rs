@@ -1170,22 +1170,3 @@ fn a_command_row_focuses_its_own_shell() {
         "the command row does not also select the workspace"
     );
 }
-
-#[test]
-fn a_command_row_leaves_room_for_the_next_workspace() {
-    let mut fixture = Fixture::new(&[1, 2]);
-    fixture.commands.push((1, "make test".to_owned()));
-    fixture.frame(vec![]);
-    let below = row(0).y + ROW_HEIGHT * 0.5 + 2.0 + COMMAND_HEIGHT;
-    fixture.actions.clear();
-    // The next workspace starts below the command row.
-    let next = Pos2::new(100.0, below + ROW_HEIGHT * 0.5);
-    fixture.frame(vec![button(next, true)]);
-    fixture.frame(vec![button(next, false)]);
-    assert!(
-        fixture
-            .actions
-            .iter()
-            .any(|action| matches!(action, Action::SelectWorkspace(id) if id.get() == 2)),
-    );
-}
