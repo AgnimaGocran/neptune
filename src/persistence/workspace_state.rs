@@ -1032,6 +1032,13 @@ fn restore_versioned(snapshot: StateSnapshot, limits: Limits, report: &mut LoadR
             let order = snapshot.sidebar_order.map(|saved| {
                 let mut order = Vec::new();
                 for item in saved.into_iter().map(SidebarItem::from) {
+                    // A workspace now listed as a compact tab under another is
+                    // no top-level row of its own: it is skipped without a word.
+                    if let SidebarItem::Workspace(id) = item
+                        && model.mini_parent(id).is_some()
+                    {
+                        continue;
+                    }
                     // A workspace the model lays out under its folder or group
                     // keeps that row's place, as an older save that listed the
                     // workspace itself asked.
