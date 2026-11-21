@@ -418,18 +418,6 @@ impl App {
                         let _ = session.focus(self.pane_native_focused(ctx, pane));
                     }
                     self.dispatch(ctx, Command::SessionStarted { pane, generation });
-                    // A command row's shell runs its command once it starts.
-                    if let Some(command) = self
-                        .controller
-                        .model()
-                        .pane(pane)
-                        .filter(|item| item.is_mini())
-                        .map(|item| item.command().to_owned())
-                        .filter(|command| !command.is_empty())
-                        && let Some(session) = self.sessions.get(pane)
-                    {
-                        let _ = session.write(format!("{command}\r").as_bytes());
-                    }
                     self.diagnostics
                         .operation("spawn", pane, generation, elapsed);
                 }
@@ -727,15 +715,7 @@ impl App {
                     group: w.group(),
                     folder: model.folder_of(w.id()),
                     pinned: w.pinned(),
-                    minis: w
-                        .panes()
-                        .iter()
-                        .filter(|pane| pane.is_mini())
-                        .map(|pane| crate::ui::MiniTab {
-                            pane: pane.id(),
-                            command: pane.command().to_owned(),
-                        })
-                        .collect(),
+                    command: w.command().into(),
                     name: w.name().into(),
                     cwd: cwd.into(),
                     branch: self

@@ -1146,8 +1146,6 @@ mod tests {
                 spawned_by: None,
                 project: None,
                 worktree: None,
-                mini: false,
-                command: String::new(),
             }];
             plain.layout = crate::Layout::pane(PaneId::new(50));
             plain.active = PaneId::new(50);

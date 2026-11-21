@@ -271,12 +271,6 @@ pub struct SavedPane {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spawned_by: Option<PaneId>,
     /// The project whose lead started this pane's agent, from schema version 13.
-    /// A command row under its workspace's row: its own shell.
-    #[serde(default)]
-    pub mini: bool,
-    /// What that shell runs once it starts; empty for a plain shell.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub command: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project: Option<ProjectId>,
     /// The git worktree made for the pane's agent, from schema version 10.
@@ -365,8 +359,6 @@ impl StateSnapshot {
                             spawned_by: pane.spawned_by().filter(|_| pane.agent().is_some()),
                             project: pane.project().filter(|_| pane.agent().is_some()),
                             worktree: pane.worktree().cloned(),
-                            mini: pane.is_mini(),
-                            command: pane.command().to_owned(),
                             attachments: pane
                                 .attachments()
                                 .iter()
@@ -523,8 +515,6 @@ impl SavedWorkspace {
                     spawned_by: pane.spawned_by,
                     project: pane.project,
                     worktree: pane.worktree,
-                    mini: pane.mini,
-                    command: pane.command,
                     attachments: pane
                         .attachments
                         .iter()
@@ -1308,8 +1298,6 @@ fn restore_legacy(legacy: LegacyState, limits: Limits, report: &mut LoadReport) 
                 spawned_by: None,
                 project: None,
                 worktree: None,
-                mini: false,
-                command: String::new(),
             });
         }
         if panes.is_empty() {
@@ -1331,8 +1319,6 @@ fn restore_legacy(legacy: LegacyState, limits: Limits, report: &mut LoadReport) 
                 spawned_by: None,
                 project: None,
                 worktree: None,
-                mini: false,
-                command: String::new(),
             });
             next_pane += 1;
         }
@@ -2345,8 +2331,6 @@ mod tests {
             spawned_by: None,
             project: None,
             worktree: None,
-            mini: false,
-            command: String::new(),
         }];
         second.layout = SavedLayout::Pane {
             pane: PaneId::new(3),

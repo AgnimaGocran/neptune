@@ -225,10 +225,12 @@ pub enum Action {
     /// Keeps a workspace's row at the top of the sidebar, or returns it to
     /// its group or folder.
     SetPinned(WorkspaceId, bool),
-    /// Adds a command row under a workspace's row.
+    /// Names a workspace's row by a command; an empty one clears it.
     SetCommand(WorkspaceId, String),
-    /// Opens the sheet that adds one.
+    /// Opens the command sheet for a workspace.
     EditCommand(WorkspaceId),
+    /// Runs the command a workspace's row is named by.
+    RunCommand(WorkspaceId),
     /// Orders the sidebar once, by name or by how recently each terminal
     /// wrote: the pinned rows, or everything else.
     SortSidebar {
@@ -349,13 +351,6 @@ pub enum SidebarSort {
     /// not written since it started stands after those that have.
     Recent,
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
-/// One command listed under a workspace's row: a shell of its own, in that
-/// workspace's folder, started with that command.
-pub struct MiniTab {
-    pub pane: PaneId,
-    pub command: String,
-}
 #[derive(Clone)]
 pub struct WorkspaceView {
     pub id: WorkspaceId,
@@ -364,8 +359,8 @@ pub struct WorkspaceView {
     pub folder: Option<FolderId>,
     /// Pinned rows stand at the top of the sidebar apart from their group.
     pub pinned: bool,
-    /// The commands listed under this row, each in a shell of its own.
-    pub minis: Vec<MiniTab>,
+    /// The command this row is named by, empty for the workspace name.
+    pub command: String,
     pub name: String,
     /// Current local directory of this workspace's focused terminal.
     pub cwd: PathBuf,

@@ -143,11 +143,17 @@ pub(super) fn workspace_row(
     // An unread count takes the trailing edge; wider counts need more room.
     let trailing = if workspace.unread > 0 {
         crate::ui::notifications::pill_width(workspace.unread) + 14.0
-    } else {
+    } else if workspace.command.is_empty() {
         30.0
+    } else {
+        52.0
     };
-    // The row keeps its name; its commands are listed under it.
-    let label = workspace.name.as_str();
+    // A row named by a command shows that command instead of the name.
+    let label = if workspace.command.is_empty() {
+        workspace.name.as_str()
+    } else {
+        workspace.command.as_str()
+    };
     let text_width = row.right() - text_left - trailing;
     galley_at(
         &painter,
@@ -314,67 +320,40 @@ pub(super) fn workspace_row(
         );
     }
     egui::Popup::menu(&more_response).show(|ui| workspace_menu(ui, p, workspace, view, actions));
-    // The commands listed under the row: narrow lines of their own, each a
-    // shell in the same folder.
-    for (index, mini) in workspace.minis.iter().enumerate() {
-        let line = Rect::from_min_size(
-            Pos2::new(
-                row.left() + 9.0,
-                row.bottom() + 2.0 + index as f32 * COMMAND_STEP,
-            ),
-            vec2(row.width() - 18.0, COMMAND_HEIGHT),
+    // A row named by a command runs it again from its own button.
+    if !workspace.command.is_empty() && !dragging && pane_drag.is_none() {
+        let run = Rect::from_center_size(
+            Pos2::new(row.right() - 40.0, row.center().y),
+            Vec2::splat(20.0),
         );
-        let response = ui.interact(
-            line,
-            ui.id()
-                .with(("workspace-mini", workspace.id.get(), mini.pane.get())),
+        let run_response = ui.interact(
+            run,
+            ui.id().with(("workspace-run", workspace.id.get())),
             Sense::click(),
         );
-        let command = if mini.command.is_empty() {
-            "shell"
-        } else {
-            &mini.command
-        };
-        response.widget_info(|| {
-            WidgetInfo::labeled(WidgetType::Button, true, format!("Command {command}"))
+        run_response.widget_info(|| {
+            WidgetInfo::labeled(
+                WidgetType::Button,
+                true,
+                format!("Run the command of {}", workspace.name),
+            )
         });
-        if response.hovered() {
-            painter.rect_filled(line, 6, p.hover);
+        if run_response.hovered() {
+            painter.rect_filled(run, 5, p.pressed);
         }
         icons::paint(
             &painter,
-            Rect::from_center_size(
-                Pos2::new(line.left() + 6.0, line.center().y),
-                Vec2::splat(9.0),
-            ),
+            run.shrink(4.0),
             Icon::Play,
-            p.accent,
+            if run_response.hovered() {
+                p.fg
+            } else {
+                p.secondary
+            },
         );
-        galley_at(
-            &painter,
-            Pos2::new(line.left() + 16.0, line.center().y + 1.0),
-            elided(
-                &painter,
-                command,
-                theme::regular(11.5),
-                if response.hovered() {
-                    p.fg
-                } else {
-                    p.secondary
-                },
-                line.width() - 22.0,
-            ),
-        );
-        if response.clicked() {
-            actions.push(Action::Focus(mini.pane));
+        if run_response.clicked() {
+            actions.push(Action::RunCommand(workspace.id));
         }
-        response.context_menu(|ui| {
-            menu_layout(ui, 190.0);
-            if menu_item(ui, p, Icon::Close, "Close command", "", false) {
-                actions.push(Action::ClosePane(mini.pane));
-                ui.close();
-            }
-        });
     }
     response
 }
@@ -396,17 +375,10 @@ pub(super) fn workspace_rows(
     actions: &mut Vec<Action>,
 ) {
     let count = rows.len();
-    // Each row stands taller by the commands listed under it.
-    let mut slots = Vec::with_capacity(count);
-    let mut end = 0.0;
-    for workspace in rows {
-        slots.push(end);
-        end += row_height(workspace);
-    }
     let (list, _) = ui.allocate_exact_size(
         vec2(
             ui.available_width(),
-            (end - (ROW_STEP - ROW_HEIGHT)).max(0.0),
+            (count as f32 * ROW_STEP - (ROW_STEP - ROW_HEIGHT)).max(0.0),
         ),
         Sense::hover(),
     );
@@ -434,16 +406,13 @@ pub(super) fn workspace_rows(
             .map(|drag| drag.pointer)
             .or_else(|| ui.input(|input| input.pointer.latest_pos()));
         let low = (viewport.top() - list.top()).max(0.0);
-        let high = slots
-            .last()
-            .copied()
-            .unwrap_or(0.0)
+        let high = ((count - 1) as f32 * ROW_STEP)
             .min(viewport.bottom() - list.top() - ROW_HEIGHT)
             .max(low);
         let top = pointer
             .map(|pointer| pointer.y - grip.y - list.top())
             .or_else(|| shown(rows[origin].id, &drag.tops))
-            .unwrap_or_else(|| slots.get(origin).copied().unwrap_or(0.0))
+            .unwrap_or(origin as f32 * ROW_STEP)
             .clamp(low, high);
         if let Some(pointer) = pointer {
             let over = if list.top() < viewport.top() - 0.5 {
@@ -472,7 +441,7 @@ pub(super) fn workspace_rows(
         held = None;
         ui.ctx().request_repaint();
     }
-    let target = held.map(|(origin, top)| (origin, drop_index(top, &slots)));
+    let target = held.map(|(origin, top)| (origin, drop_index(top, count)));
 
     let decay = (-ui.input(|input| input.stable_dt).min(0.1) / ROW_SETTLE).exp();
     let mut tops = Vec::new();
@@ -491,11 +460,11 @@ pub(super) fn workspace_rows(
         let top = match held {
             Some((origin, top)) if origin == index => top,
             _ => {
-                let rest_index =
-                    target.map_or(index, |(origin, target)| displaced(index, origin, target));
-                let rest = slots.get(rest_index).copied().unwrap_or(0.0);
+                let rest = target.map_or(index, |(origin, target)| displaced(index, origin, target))
+                    as f32
+                    * ROW_STEP;
                 // A row not yet tracked starts from its own place.
-                let from = shown(workspace.id, &drag.tops).unwrap_or_else(|| slots[index]);
+                let from = shown(workspace.id, &drag.tops).unwrap_or(index as f32 * ROW_STEP);
                 let top = rest + (from - rest) * decay;
                 if (top - rest).abs() < 0.5 {
                     rest

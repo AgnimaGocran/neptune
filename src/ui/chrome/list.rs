@@ -52,30 +52,23 @@ pub(super) fn workspace_list(
                 .find(|(id, _, _)| id == item)
                 .map_or_else(
                     || match item {
-                        SidebarItem::Workspace(id) => view
-                            .workspaces
-                            .iter()
-                            .find(|w| w.id == *id)
-                            .map_or(ROW_STEP, row_height),
+                        SidebarItem::Workspace(_) => ROW_STEP,
                         SidebarItem::Group(id) => view
                             .groups
                             .iter()
                             .find(|g| g.id() == *id)
                             .map_or(GROUP_HEIGHT + spacing, |group| {
+                                let count = view
+                                    .workspaces
+                                    .iter()
+                                    .filter(|w| w.group == Some(*id) && !w.pinned)
+                                    .count();
                                 GROUP_HEIGHT
                                     + spacing
                                     + if group.collapsed() {
                                         0.0
                                     } else {
-                                        spacing
-                                            + (view
-                                                .workspaces
-                                                .iter()
-                                                .filter(|w| w.group == Some(*id) && !w.pinned)
-                                                .map(row_height)
-                                                .sum::<f32>()
-                                                - 2.0)
-                                                .max(28.0)
+                                        spacing + (count as f32 * ROW_STEP - 2.0).max(28.0)
                                     }
                             }),
                         SidebarItem::Folder(id) => view
@@ -83,20 +76,17 @@ pub(super) fn workspace_list(
                             .iter()
                             .find(|f| f.folder.id() == *id)
                             .map_or(GROUP_HEIGHT + spacing, |folder| {
+                                let count = view
+                                    .workspaces
+                                    .iter()
+                                    .filter(|w| w.folder == Some(*id))
+                                    .count();
                                 GROUP_HEIGHT
                                     + spacing
                                     + if folder.folder.collapsed() {
                                         0.0
                                     } else {
-                                        spacing
-                                            + (view
-                                                .workspaces
-                                                .iter()
-                                                .filter(|w| w.folder == Some(*id))
-                                                .map(row_height)
-                                                .sum::<f32>()
-                                                - 2.0)
-                                                .max(28.0)
+                                        spacing + (count as f32 * ROW_STEP - 2.0).max(28.0)
                                     }
                             }),
                     },
