@@ -921,6 +921,11 @@ impl Controller {
                 cwd,
                 command,
             } => {
+                let shown = self
+                    .model
+                    .workspace(workspace)
+                    .ok_or(Error::UnknownWorkspace(workspace))?
+                    .active;
                 effects.push(self.add_pane(
                     workspace,
                     pane,
@@ -930,6 +935,9 @@ impl Controller {
                     true,
                     sanitize_command(&command),
                 )?);
+                // The terminal the command was added from keeps its content in
+                // view; the new tab joins the strip beside it.
+                self.model.workspace_mut(workspace)?.active = shown;
                 dirty = true;
             }
             Command::OpenBrowser {
@@ -2384,8 +2392,17 @@ mod tests {
                 command: "  cargo dev\nserver  ".into(),
             })
             .unwrap();
-        let mini = controller.model().active_pane().unwrap();
-        assert_ne!(mini, pane);
+        // The terminal the command was added from keeps its content in view.
+        assert_eq!(controller.model().active_pane(), Some(pane));
+        let mini = controller
+            .model()
+            .workspace(workspace)
+            .unwrap()
+            .panes()
+            .iter()
+            .find(|item| item.is_mini())
+            .map(|item| item.id())
+            .unwrap();
         let item = controller.model().pane(mini).unwrap();
         assert!(item.is_mini());
         assert_eq!(item.command(), "cargo devserver");
