@@ -13,7 +13,7 @@ fn workspaces(ids: &[u64]) -> Vec<WorkspaceView> {
             group: None,
             folder: None,
             pinned: false,
-            command: String::new(),
+            minis: Vec::new(),
             id: WorkspaceId::new(*id),
             name: format!("workspace {id}"),
             cwd: "/srv/app".into(),
@@ -110,12 +110,15 @@ impl Fixture {
                 .iter()
                 .find(|(id, _)| *id == workspace.id.get())
                 .map(|(_, folder)| *folder);
-            if let Some((_, command)) = self
+            if let Some((id, command)) = self
                 .commands
                 .iter()
                 .find(|(id, _)| *id == workspace.id.get())
             {
-                workspace.command = command.clone();
+                workspace.minis = vec![crate::ui::MiniTab {
+                    pane: PaneId::new(5_000 + *id),
+                    command: command.clone(),
+                }];
             }
         }
         let view = ChromeView {
@@ -231,6 +234,8 @@ impl Fixture {
                     spawned_by: None,
                     project: None,
                     worktree: None,
+                    mini: false,
+                    command: String::new(),
                 }],
                 layout: neptune_model::Layout::pane(PaneId::new(*id)),
                 active: PaneId::new(*id),
@@ -612,11 +617,12 @@ fn holding_a_folder_at_the_edge_scrolls_to_hidden_groups() {
 
 #[test]
 fn rows_make_room_for_a_dragged_workspace() {
-    assert_eq!(drop_index(-40.0, 4), 0);
-    assert_eq!(drop_index(ROW_STEP * 0.49, 4), 0);
-    assert_eq!(drop_index(ROW_STEP * 0.51, 4), 1);
-    assert_eq!(drop_index(ROW_STEP * 9.0, 4), 3);
-    assert_eq!(drop_index(0.0, 0), 0);
+    let slots: Vec<f32> = (0..4).map(|index| index as f32 * ROW_STEP).collect();
+    assert_eq!(drop_index(-40.0, &slots), 0);
+    assert_eq!(drop_index(ROW_STEP * 0.49, &slots), 0);
+    assert_eq!(drop_index(ROW_STEP * 0.51, &slots), 1);
+    assert_eq!(drop_index(ROW_STEP * 9.0, &slots), 3);
+    assert_eq!(drop_index(0.0, &[]), 0);
     let rests =
         |origin, target| -> Vec<usize> { (0..5).map(|i| displaced(i, origin, target)).collect() };
     // The held row's own entry is unused; its neighbours close the gap.
@@ -917,7 +923,7 @@ fn a_carried_terminal_drops_on_another_workspace_row_but_not_its_own() {
             group: None,
             folder: None,
             pinned: false,
-            command: String::new(),
+            minis: Vec::new(),
             id: WorkspaceId::new(id),
             name: format!("workspace {id}"),
             cwd: "/srv/app".into(),
@@ -1137,26 +1143,30 @@ fn pinned_rows_stand_under_a_heading_that_sorts_them_apart() {
 }
 
 #[test]
-fn a_command_row_runs_it_from_its_button() {
+fn a_command_row_focuses_its_own_shell() {
     let mut fixture = Fixture::new(&[1]);
     fixture.commands.push((1, "make test".to_owned()));
     fixture.frame(vec![]);
     fixture.actions.clear();
-    let at = Pos2::new(216.0 - 40.0, row(0).y);
+    // The first command row hangs just under the workspace row.
+    let at = Pos2::new(
+        100.0,
+        row(0).y + ROW_HEIGHT * 0.5 + 2.0 + COMMAND_HEIGHT * 0.5,
+    );
     fixture.frame(vec![button(at, true)]);
     fixture.frame(vec![button(at, false)]);
     assert!(
         fixture
             .actions
             .iter()
-            .any(|action| matches!(action, Action::RunCommand(id) if id.get() == 1)),
-        "the row's button runs its command"
+            .any(|action| matches!(action, Action::Focus(pane) if pane.get() == 5_001)),
+        "the command row focuses the shell behind it"
     );
     assert!(
         !fixture
             .actions
             .iter()
             .any(|action| matches!(action, Action::SelectWorkspace(_))),
-        "the button does not also select the row"
+        "the command row does not also select the workspace"
     );
 }

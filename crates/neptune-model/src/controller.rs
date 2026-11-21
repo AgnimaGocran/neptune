@@ -96,12 +96,6 @@ pub enum Command {
         workspace: WorkspaceId,
         pinned: bool,
     },
-    /// Names a workspace's row by the command it runs; empty clears it.
-    SetWorkspaceCommand {
-        workspace: WorkspaceId,
-        command: String,
-    },
-    /// Starts a restored pane the first time it is opened.
     StartPane {
         pane: PaneId,
     },
@@ -120,6 +114,14 @@ pub enum Command {
         workspace: WorkspaceId,
         pane: PaneId,
         cwd: PathBuf,
+    },
+    /// Opens one of the commands listed under a workspace's row: a shell of
+    /// its own in the same folder, running `command` once it starts.
+    AddMiniTab {
+        workspace: WorkspaceId,
+        pane: PaneId,
+        cwd: PathBuf,
+        command: String,
     },
     /// Opens a browser as a tab, or across a split of the targeted tab group.
     OpenBrowser {
@@ -573,6 +575,8 @@ impl Controller {
                         spawned_by: None,
                         project: None,
                         worktree: None,
+                        mini: false,
+                        command: String::new(),
                         generation: 1,
                         lifecycle: Lifecycle::Starting,
                     }],
@@ -656,6 +660,8 @@ impl Controller {
                             spawned_by: None,
                             project: None,
                             worktree: None,
+                            mini: false,
+                            command: String::new(),
                             generation: 1,
                             lifecycle: Lifecycle::Starting,
                         }],
@@ -839,17 +845,6 @@ impl Controller {
                     dirty = true;
                 }
             }
-            Command::SetWorkspaceCommand { workspace, command } => {
-                let command = sanitize_command(&command);
-                let current = self
-                    .model
-                    .workspace(workspace)
-                    .ok_or(Error::UnknownWorkspace(workspace))?;
-                if current.command() != command {
-                    self.model.workspace_mut(workspace)?.command = command;
-                    dirty = true;
-                }
-            }
             Command::StartPane { pane } => {
                 let owner = self
                     .model
@@ -893,7 +888,15 @@ impl Controller {
                 cwd,
             } => {
                 let kind = self.model.pane(pane).ok_or(Error::UnknownPane(pane))?.kind;
-                effects.push(self.add_pane(workspace, pane, Some(axis), cwd, kind)?);
+                effects.push(self.add_pane(
+                    workspace,
+                    pane,
+                    Some(axis),
+                    cwd,
+                    kind,
+                    false,
+                    String::new(),
+                )?);
                 dirty = true;
             }
             Command::AddTab {
@@ -901,7 +904,32 @@ impl Controller {
                 pane,
                 cwd,
             } => {
-                effects.push(self.add_pane(workspace, pane, None, cwd, PaneKind::Terminal)?);
+                effects.push(self.add_pane(
+                    workspace,
+                    pane,
+                    None,
+                    cwd,
+                    PaneKind::Terminal,
+                    false,
+                    String::new(),
+                )?);
+                dirty = true;
+            }
+            Command::AddMiniTab {
+                workspace,
+                pane,
+                cwd,
+                command,
+            } => {
+                effects.push(self.add_pane(
+                    workspace,
+                    pane,
+                    None,
+                    cwd,
+                    PaneKind::Terminal,
+                    true,
+                    sanitize_command(&command),
+                )?);
                 dirty = true;
             }
             Command::OpenBrowser {
@@ -915,7 +943,15 @@ impl Controller {
                     .ok_or(Error::UnknownPane(pane))?
                     .cwd
                     .clone();
-                effects.push(self.add_pane(workspace, pane, axis, cwd, PaneKind::Browser)?);
+                effects.push(self.add_pane(
+                    workspace,
+                    pane,
+                    axis,
+                    cwd,
+                    PaneKind::Browser,
+                    false,
+                    String::new(),
+                )?);
                 dirty = true;
             }
             Command::OpenWorktree {
@@ -941,6 +977,8 @@ impl Controller {
                     None,
                     worktree.path.clone(),
                     PaneKind::Terminal,
+                    false,
+                    String::new(),
                 )?);
                 let ws = self.model.workspace_mut(workspace)?;
                 let id = ws.active;
@@ -1308,6 +1346,8 @@ impl Controller {
                     spawned_by: Some(parent),
                     project: None,
                     worktree: None,
+                    mini: false,
+                    command: String::new(),
                     generation: 1,
                     lifecycle: Lifecycle::Starting,
                 });
@@ -1436,6 +1476,8 @@ impl Controller {
                     spawned_by: None,
                     project: Some(project),
                     worktree,
+                    mini: false,
+                    command: String::new(),
                     generation: 1,
                     lifecycle: Lifecycle::Starting,
                 });
@@ -1655,6 +1697,8 @@ impl Controller {
         axis: Option<Axis>,
         cwd: PathBuf,
         kind: PaneKind,
+        mini: bool,
+        command: String,
     ) -> Result<Effect, Error> {
         if kind == PaneKind::Browser
             && self
@@ -1714,6 +1758,8 @@ impl Controller {
             spawned_by: None,
             project: None,
             worktree: None,
+            mini,
+            command,
             generation: 1,
             lifecycle: Lifecycle::Starting,
         });
@@ -2326,30 +2372,25 @@ mod tests {
     }
 
     #[test]
-    fn a_workspace_row_is_named_by_one_sanitised_command_line() {
+    fn a_command_row_starts_a_shell_of_its_own() {
         let mut controller = Controller::new(Model::default());
         let workspace = create(&mut controller, "web");
-        controller
-            .dispatch(Command::SetWorkspaceCommand {
+        let pane = controller.model().active_pane().unwrap();
+        let effects = controller
+            .dispatch(Command::AddMiniTab {
                 workspace,
+                pane,
+                cwd: "/srv/web".into(),
                 command: "  cargo dev\nserver  ".into(),
             })
             .unwrap();
-        assert_eq!(
-            controller.model().workspace(workspace).unwrap().command(),
-            "cargo devserver"
-        );
-        assert_eq!(controller.model().specs()[0].command, "cargo devserver");
-        controller
-            .dispatch(Command::SetWorkspaceCommand {
-                workspace,
-                command: "   ".into(),
-            })
-            .unwrap();
-        assert_eq!(
-            controller.model().workspace(workspace).unwrap().command(),
-            ""
-        );
+        let mini = controller.model().active_pane().unwrap();
+        assert_ne!(mini, pane);
+        let item = controller.model().pane(mini).unwrap();
+        assert!(item.is_mini());
+        assert_eq!(item.command(), "cargo devserver");
+        assert_eq!(item.cwd(), std::path::Path::new("/srv/web"));
+        assert_eq!(controller.model().specs()[0].panes[1].mini, true);
     }
 
     #[test]
@@ -4067,6 +4108,8 @@ mod tests {
                     spawned_by: None,
                     project: None,
                     worktree: None,
+                    mini: false,
+                    command: String::new(),
                 },
                 PaneSpec {
                     id: PaneId::new(2),
@@ -4079,6 +4122,8 @@ mod tests {
                     spawned_by: None,
                     project: None,
                     worktree: None,
+                    mini: false,
+                    command: String::new(),
                 },
             ],
             layout: Layout::pane(PaneId::new(1)),

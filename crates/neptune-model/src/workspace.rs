@@ -168,10 +168,22 @@ pub struct Pane {
     pub(crate) spawned_by: Option<PaneId>,
     pub(crate) project: Option<ProjectId>,
     pub(crate) worktree: Option<crate::Worktree>,
+    /// A command row under its workspace is a shell of its own.
+    pub(crate) mini: bool,
+    /// What that shell runs once it starts; empty for a plain shell.
+    pub(crate) command: String,
     pub(crate) generation: u64,
     pub(crate) lifecycle: Lifecycle,
 }
 impl Pane {
+    /// Its row is one of the commands listed under its workspace.
+    pub fn is_mini(&self) -> bool {
+        self.mini
+    }
+    /// The command its shell runs once it starts, empty for a plain shell.
+    pub fn command(&self) -> &str {
+        &self.command
+    }
     pub fn kind(&self) -> PaneKind {
         self.kind
     }
@@ -234,6 +246,10 @@ pub struct PaneSpec {
     pub project: Option<ProjectId>,
     /// The git worktree Neptune made for this terminal's agent.
     pub worktree: Option<crate::Worktree>,
+    /// The row lists this pane among its commands, in a shell of its own.
+    pub mini: bool,
+    /// What that shell runs once it starts; empty for a plain shell.
+    pub command: String,
 }
 #[derive(Debug, Clone)]
 pub struct WorkspaceSpec {
@@ -1150,6 +1166,8 @@ impl Model {
                         spawned_by: pane.spawned_by,
                         project: pane.project,
                         worktree: pane.worktree,
+                        mini: pane.mini,
+                        command: pane.command,
                         generation: 1,
                         lifecycle: Lifecycle::Starting,
                     })
@@ -1281,6 +1299,8 @@ impl Model {
                         spawned_by: pane.spawned_by,
                         project: pane.project,
                         worktree: pane.worktree.clone(),
+                        mini: pane.mini,
+                        command: pane.command.clone(),
                     })
                     .collect(),
                 layout: workspace.layout.clone(),

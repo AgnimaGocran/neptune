@@ -88,7 +88,12 @@ Secondary-click a workspace and choose **Pin to top** to keep its row above ever
 
 Pinned rows stand under a **Pinned** heading whose two small buttons order them by name or by last update; the same two buttons beside the sidebar toggle order the rest of the list. Sorting happens when a button is pressed and does not repeat on its own: **Sort by name** arranges rows A to Z, and **Sort by last update** puts the workspace whose terminal wrote most recently first and the ones that have been quiet longest last. Groups and folder branches sort by their own name or by their most recently written workspace. The new order is saved like any other sidebar order.
 
-Secondary-click a workspace and choose **Set command…** to name its row by one command line: the row then shows that command instead of the workspace name, and its small ▶ button runs it again in that terminal. Saving an empty field brings the workspace name back. Duplicating a workspace copies its command; nothing typed into a terminal is read for this.
+Secondary-click a workspace and choose **Add command…** to list a command as a
+narrow row under it: that row is a shell of its own, in the workspace's folder
+(and on its SSH host), which runs the command once it starts. A click on the row
+shows that shell in place of the current terminal, and secondary-clicking the
+row closes it again. One workspace can list several commands, and the row itself
+keeps its name.
 
 Choose **Default directory…** from a group's context menu to set the starting
 folder for new local workspaces created in that group. Enter an absolute local

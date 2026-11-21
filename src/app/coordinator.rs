@@ -559,25 +559,31 @@ impl App {
                 self.dispatch(ctx, Command::SetWorkspacePinned { workspace, pinned })
             }
             Action::SetCommand(workspace, command) => {
-                self.dispatch(ctx, Command::SetWorkspaceCommand { workspace, command })
-            }
-            Action::EditCommand(workspace) => {
-                if let Some(item) = self.controller.model().workspace(workspace) {
-                    self.ui.rename_name = item.command().to_owned();
-                    self.ui.overlay = OverlayState::Command(workspace);
-                    self.ui.overlay_focus = true;
-                }
-            }
-            Action::RunCommand(workspace) => {
                 let Some(item) = self.controller.model().workspace(workspace) else {
                     return;
                 };
-                let (pane, command) = (item.active(), item.command().to_owned());
-                let Some(session) = self.sessions.get(pane) else {
-                    return;
-                };
-                if !command.is_empty() {
-                    let _ = session.write(format!("{command}\r").as_bytes());
+                let pane = item.active();
+                let cwd = self
+                    .controller
+                    .model()
+                    .pane(pane)
+                    .map(|pane| pane.cwd().to_path_buf())
+                    .unwrap_or_default();
+                self.dispatch(
+                    ctx,
+                    Command::AddMiniTab {
+                        workspace,
+                        pane,
+                        cwd,
+                        command,
+                    },
+                );
+            }
+            Action::EditCommand(workspace) => {
+                if self.controller.model().workspace(workspace).is_some() {
+                    self.ui.rename_name.clear();
+                    self.ui.overlay = OverlayState::Command(workspace);
+                    self.ui.overlay_focus = true;
                 }
             }
             Action::SortSidebar { pinned, by } => self.sort_sidebar(ctx, pinned, by),

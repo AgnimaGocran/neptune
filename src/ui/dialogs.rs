@@ -69,7 +69,7 @@ fn rename(
         OverlayState::RenameProject(_) => {
             ("Rename project", "Project name", "Project rename", "Save")
         }
-        OverlayState::Command(_) => ("Set command", "Command", "Workspace command", "Save"),
+        OverlayState::Command(_) => ("Add command", "Command", "Workspace command", "Add"),
         _ => (
             "Rename workspace",
             "Workspace name",
