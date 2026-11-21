@@ -343,6 +343,12 @@ pub enum SidebarSort {
     /// not written since it started stands after those that have.
     Recent,
 }
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// A workspace listed as a compact tab under another: same folder, own shell.
+pub struct MiniTab {
+    pub workspace: WorkspaceId,
+    pub name: String,
+}
 #[derive(Clone)]
 pub struct WorkspaceView {
     pub id: WorkspaceId,
@@ -351,8 +357,8 @@ pub struct WorkspaceView {
     pub folder: Option<FolderId>,
     /// Pinned rows stand at the top of the sidebar apart from their group.
     pub pinned: bool,
-    /// The command this row is named by, empty for the workspace name.
-    pub command: String,
+    /// The workspaces listed as compact tabs under this row.
+    pub minis: Vec<MiniTab>,
     pub name: String,
     /// Current local directory of this workspace's focused terminal.
     pub cwd: PathBuf,

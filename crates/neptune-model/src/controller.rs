@@ -2278,10 +2278,13 @@ mod tests {
                 grouped: false,
             })
             .unwrap();
-        assert_eq!(
-            controller.model().sidebar_order(),
-            [SidebarItem::Workspace(one), SidebarItem::Workspace(two)]
-        );
+        let row = match controller.model().sidebar_order() {
+            [SidebarItem::Workspace(id)] => *id,
+            other => panic!("expected one row, found {other:?}"),
+        };
+        // The second terminal of that folder is listed under the first.
+        let (parent, child) = if row == one { (one, two) } else { (two, one) };
+        assert_eq!(controller.model().mini_parent(child), Some(parent));
         assert!(!controller.model().folder(folder).unwrap().grouped());
         // The choice is saved, and grouping again restores the row.
         assert!(!controller.model().folder_specs()[0].grouped);
@@ -2295,6 +2298,9 @@ mod tests {
             controller.model().sidebar_order(),
             [SidebarItem::Folder(folder)]
         );
+        for id in [one, two] {
+            assert_eq!(controller.model().mini_parent(id), None);
+        }
     }
 
     #[test]
@@ -2351,7 +2357,6 @@ mod tests {
             ""
         );
     }
-
     #[test]
     fn a_reordered_sidebar_refuses_rows_that_are_unknown_or_repeated() {
         let mut controller = Controller::new(Model::default());

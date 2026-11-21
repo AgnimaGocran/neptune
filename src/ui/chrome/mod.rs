@@ -74,6 +74,16 @@ const ROW_STEP: f32 = ROW_HEIGHT + 2.0;
 
 const GROUP_HEIGHT: f32 = 28.0;
 
+/// One of the tabs listed under a workspace: a narrow line of its own.
+const COMMAND_HEIGHT: f32 = 22.0;
+
+const COMMAND_STEP: f32 = COMMAND_HEIGHT + 2.0;
+
+/// How tall a workspace's row stands, with the tabs listed under it.
+fn row_height(workspace: &WorkspaceView) -> f32 {
+    ROW_STEP + workspace.minis.len() as f32 * COMMAND_STEP
+}
+
 /// The space around a folder: above its workspaces and before the next item.
 const GROUP_GAP: f32 = 4.0;
 
@@ -103,9 +113,14 @@ fn sidebar_drop_index(top: f32, heights: &[f32], origin: usize) -> usize {
     target
 }
 
-/// The position a row would take if dropped with its top at `top`.
-fn drop_index(top: f32, count: usize) -> usize {
-    ((top / ROW_STEP).round().max(0.0) as usize).min(count.saturating_sub(1))
+/// The position a row would take if dropped with its top at `top`: the row
+/// whose place in the list it is nearest to.
+fn drop_index(top: f32, slots: &[f32]) -> usize {
+    slots
+        .iter()
+        .enumerate()
+        .min_by(|(_, a), (_, b)| (top - **a).abs().total_cmp(&(top - **b).abs()))
+        .map_or(0, |(index, _)| index)
 }
 
 /// Where the row at `index` rests while the row from `origin` is held over

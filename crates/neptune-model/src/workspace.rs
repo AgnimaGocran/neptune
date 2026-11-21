@@ -476,6 +476,8 @@ pub struct Model {
     pub(crate) next_project: u64,
     pub(crate) limits: Limits,
     /// Oldest first.
+    /// The workspaces shown as compact tabs under another, child first.
+    pub(crate) minis: Vec<(WorkspaceId, WorkspaceId)>,
     pub(crate) conversations: Vec<crate::Conversation>,
 }
 impl Default for Model {
@@ -507,6 +509,7 @@ impl Model {
             next_split: 1,
             next_project: 1,
             limits,
+            minis: Vec::new(),
             conversations: Vec::new(),
         }
     }
@@ -709,6 +712,20 @@ impl Model {
             .iter()
             .find(|folder| workspace.cwd == folder.path && folder.grouped)
             .map(Folder::id)
+    }
+    /// The workspace whose compact tabs hold this one, if any.
+    pub fn mini_parent(&self, workspace: WorkspaceId) -> Option<WorkspaceId> {
+        self.minis
+            .iter()
+            .find(|(child, _)| *child == workspace)
+            .map(|(_, parent)| *parent)
+    }
+    /// The workspaces this one lists as compact tabs, in sidebar order.
+    pub fn mini_tabs(&self, workspace: WorkspaceId) -> impl Iterator<Item = &Workspace> {
+        self.minis
+            .iter()
+            .filter(move |(_, parent)| *parent == workspace)
+            .filter_map(|(child, _)| self.workspace(*child))
     }
     /// The workspaces a folder holds, in sidebar order.
     pub fn folder_workspaces(&self, id: FolderId) -> impl Iterator<Item = &Workspace> {
@@ -1457,10 +1474,31 @@ impl Model {
                 self.next_folder += 1;
             }
         }
+        // A later workspace in the same directory joins the first one as one of
+        // its compact tabs and leaves the top-level rows; folders keep their own
+        // grouping untouched.
+        self.minis.clear();
+        let mut first_of: Vec<(std::path::PathBuf, WorkspaceId)> = Vec::new();
+        for workspace in &self.workspaces {
+            if workspace.pinned
+                || workspace.group.is_some()
+                || self
+                    .folders
+                    .iter()
+                    .any(|folder| folder.path == workspace.cwd && folder.grouped)
+            {
+                continue;
+            }
+            match first_of.iter().find(|(cwd, _)| *cwd == workspace.cwd) {
+                Some((_, parent)) => self.minis.push((workspace.id, *parent)),
+                None => first_of.push((workspace.cwd.clone(), workspace.id)),
+            }
+        }
         // The row each workspace belongs to: its group, its folder, or itself.
         let entries: Vec<(WorkspaceId, SidebarItem)> = self
             .workspaces
             .iter()
+            .filter(|workspace| !self.minis.iter().any(|(child, _)| *child == workspace.id))
             .map(|workspace| {
                 let entry = if workspace.pinned {
                     SidebarItem::Workspace(workspace.id)

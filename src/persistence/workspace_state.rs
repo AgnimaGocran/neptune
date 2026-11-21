@@ -2340,6 +2340,8 @@ mod tests {
             spawned_by: None,
             project: None,
             worktree: None,
+            mini: false,
+            command: String::new(),
         }];
         second.layout = SavedLayout::Pane {
             pane: PaneId::new(3),

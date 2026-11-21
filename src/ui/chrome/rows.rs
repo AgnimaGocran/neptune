@@ -312,6 +312,60 @@ pub(super) fn workspace_row(
         );
     }
     egui::Popup::menu(&more_response).show(|ui| workspace_menu(ui, p, workspace, view, actions));
+    // The tabs of the same folder: narrow lines under their first tab.
+    for (index, mini) in workspace.minis.iter().enumerate() {
+        let line = Rect::from_min_size(
+            Pos2::new(
+                row.left() + 9.0,
+                row.bottom() + 2.0 + index as f32 * COMMAND_STEP,
+            ),
+            vec2(row.width() - 18.0, COMMAND_HEIGHT),
+        );
+        let response = ui.interact(
+            line,
+            ui.id()
+                .with(("workspace-mini", workspace.id.get(), mini.workspace.get())),
+            Sense::click(),
+        );
+        response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &mini.name));
+        if response.hovered() {
+            painter.rect_filled(line, 6, p.hover);
+        }
+        icons::paint(
+            &painter,
+            Rect::from_center_size(
+                Pos2::new(line.left() + 6.0, line.center().y),
+                Vec2::splat(9.0),
+            ),
+            Icon::Terminal,
+            p.accent,
+        );
+        galley_at(
+            &painter,
+            Pos2::new(line.left() + 16.0, line.center().y + 1.0),
+            elided(
+                &painter,
+                &mini.name,
+                theme::regular(11.5),
+                if response.hovered() {
+                    p.fg
+                } else {
+                    p.secondary
+                },
+                line.width() - 22.0,
+            ),
+        );
+        if response.clicked() {
+            actions.push(Action::SelectWorkspace(mini.workspace));
+        }
+        response.context_menu(|ui| {
+            menu_layout(ui, 190.0);
+            if menu_item(ui, p, Icon::Close, "Close tab", "", false) {
+                actions.push(Action::CloseWorkspace(mini.workspace));
+                ui.close();
+            }
+        });
+    }
     response
 }
 
@@ -332,13 +386,16 @@ pub(super) fn workspace_rows(
     actions: &mut Vec<Action>,
 ) {
     let count = rows.len();
-    let (list, _) = ui.allocate_exact_size(
-        vec2(
-            ui.available_width(),
-            (count as f32 * ROW_STEP - (ROW_STEP - ROW_HEIGHT)).max(0.0),
-        ),
-        Sense::hover(),
-    );
+    // Each row stands taller by the tabs listed under it.
+    let mut slots = Vec::with_capacity(count);
+    let mut total = 0.0;
+    for workspace in rows {
+        slots.push(total);
+        total += row_height(workspace);
+    }
+    total -= ROW_STEP - ROW_HEIGHT;
+    let (list, _) =
+        ui.allocate_exact_size(vec2(ui.available_width(), total.max(0.0)), Sense::hover());
     let lifted = drag
         .lifted
         .and_then(|id| rows.iter().position(|w| w.id == id));
@@ -363,13 +420,16 @@ pub(super) fn workspace_rows(
             .map(|drag| drag.pointer)
             .or_else(|| ui.input(|input| input.pointer.latest_pos()));
         let low = (viewport.top() - list.top()).max(0.0);
-        let high = ((count - 1) as f32 * ROW_STEP)
+        let high = slots
+            .last()
+            .copied()
+            .unwrap_or(0.0)
             .min(viewport.bottom() - list.top() - ROW_HEIGHT)
             .max(low);
         let top = pointer
             .map(|pointer| pointer.y - grip.y - list.top())
             .or_else(|| shown(rows[origin].id, &drag.tops))
-            .unwrap_or(origin as f32 * ROW_STEP)
+            .unwrap_or(slots.get(origin).copied().unwrap_or(0.0))
             .clamp(low, high);
         if let Some(pointer) = pointer {
             let over = if list.top() < viewport.top() - 0.5 {
@@ -398,7 +458,7 @@ pub(super) fn workspace_rows(
         held = None;
         ui.ctx().request_repaint();
     }
-    let target = held.map(|(origin, top)| (origin, drop_index(top, count)));
+    let target = held.map(|(origin, top)| (origin, drop_index(top, &slots)));
 
     let decay = (-ui.input(|input| input.stable_dt).min(0.1) / ROW_SETTLE).exp();
     let mut tops = Vec::new();
@@ -417,11 +477,11 @@ pub(super) fn workspace_rows(
         let top = match held {
             Some((origin, top)) if origin == index => top,
             _ => {
-                let rest = target.map_or(index, |(origin, target)| displaced(index, origin, target))
-                    as f32
-                    * ROW_STEP;
+                let rest_index =
+                    target.map_or(index, |(origin, target)| displaced(index, origin, target));
+                let rest = slots.get(rest_index).copied().unwrap_or(0.0);
                 // A row not yet tracked starts from its own place.
-                let from = shown(workspace.id, &drag.tops).unwrap_or(index as f32 * ROW_STEP);
+                let from = shown(workspace.id, &drag.tops).unwrap_or(slots[index]);
                 let top = rest + (from - rest) * decay;
                 if (top - rest).abs() < 0.5 {
                     rest

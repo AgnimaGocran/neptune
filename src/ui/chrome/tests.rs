@@ -13,7 +13,7 @@ fn workspaces(ids: &[u64]) -> Vec<WorkspaceView> {
             group: None,
             folder: None,
             pinned: false,
-            command: String::new(),
+            minis: Vec::new(),
             id: WorkspaceId::new(*id),
             name: format!("workspace {id}"),
             cwd: "/srv/app".into(),
@@ -602,11 +602,12 @@ fn holding_a_folder_at_the_edge_scrolls_to_hidden_groups() {
 
 #[test]
 fn rows_make_room_for_a_dragged_workspace() {
-    assert_eq!(drop_index(-40.0, 4), 0);
-    assert_eq!(drop_index(ROW_STEP * 0.49, 4), 0);
-    assert_eq!(drop_index(ROW_STEP * 0.51, 4), 1);
-    assert_eq!(drop_index(ROW_STEP * 9.0, 4), 3);
-    assert_eq!(drop_index(0.0, 0), 0);
+    let slots: Vec<f32> = (0..4).map(|index| index as f32 * ROW_STEP).collect();
+    assert_eq!(drop_index(-40.0, &slots), 0);
+    assert_eq!(drop_index(ROW_STEP * 0.49, &slots), 0);
+    assert_eq!(drop_index(ROW_STEP * 0.51, &slots), 1);
+    assert_eq!(drop_index(ROW_STEP * 9.0, &slots), 3);
+    assert_eq!(drop_index(0.0, &[]), 0);
     let rests =
         |origin, target| -> Vec<usize> { (0..5).map(|i| displaced(i, origin, target)).collect() };
     // The held row's own entry is unused; its neighbours close the gap.
@@ -907,7 +908,7 @@ fn a_carried_terminal_drops_on_another_workspace_row_but_not_its_own() {
             group: None,
             folder: None,
             pinned: false,
-            command: String::new(),
+            minis: Vec::new(),
             id: WorkspaceId::new(id),
             name: format!("workspace {id}"),
             cwd: "/srv/app".into(),

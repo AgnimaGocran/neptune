@@ -715,7 +715,13 @@ impl App {
                     group: w.group(),
                     folder: model.folder_of(w.id()),
                     pinned: w.pinned(),
-                    command: w.command().into(),
+                    minis: model
+                        .mini_tabs(w.id())
+                        .map(|mini| crate::ui::MiniTab {
+                            workspace: mini.id(),
+                            name: mini.name().to_owned(),
+                        })
+                        .collect(),
                     name: w.name().into(),
                     cwd: cwd.into(),
                     branch: self
