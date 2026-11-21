@@ -553,6 +553,12 @@ pub(super) fn workspace_rows(
             }
         } else if response.drag_started_by(PointerButton::Primary)
             && let Some(press) = ui.input(|input| input.pointer.press_origin())
+            && ui.input(|input| {
+                input
+                    .pointer
+                    .latest_pos()
+                    .is_some_and(|now| (now - press).length() > 6.0)
+            })
         {
             drag.lifted = Some(workspace.id);
             drag.grip = Some(press - response.rect.min);
