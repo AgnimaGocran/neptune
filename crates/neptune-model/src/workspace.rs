@@ -713,6 +713,17 @@ impl Model {
             .find(|folder| workspace.cwd == folder.path && folder.grouped)
             .map(Folder::id)
     }
+    /// The workspaces that hold a row of their own; the rest are listed as
+    /// compact tabs under the first workspace of their folder.
+    pub fn row_count(&self) -> usize {
+        let mut seen = std::collections::HashSet::new();
+        self.workspaces
+            .iter()
+            .filter(|workspace| {
+                workspace.pinned || workspace.group.is_some() || seen.insert(workspace.cwd.clone())
+            })
+            .count()
+    }
     /// The workspace whose compact tabs hold this one, if any.
     pub fn mini_parent(&self, workspace: WorkspaceId) -> Option<WorkspaceId> {
         self.minis
@@ -978,7 +989,12 @@ impl Model {
         sidebar: bool,
         limits: Limits,
     ) -> Result<Self, Error> {
-        if specs.len() > limits.workspaces {
+        let mut seen_cwd = std::collections::HashSet::new();
+        let rows = specs
+            .iter()
+            .filter(|spec| spec.pinned || spec.group.is_some() || seen_cwd.insert(spec.cwd.clone()))
+            .count();
+        if rows > limits.workspaces {
             return Err(Error::WorkspaceLimit);
         }
         if specs

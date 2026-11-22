@@ -526,9 +526,6 @@ impl Controller {
                 {
                     return Err(Error::UnknownWorkspaceGroup(group));
                 }
-                if self.model.workspaces.len() >= self.model.limits.workspaces {
-                    return Err(Error::WorkspaceLimit);
-                }
                 self.check_pane_capacity(0)?;
                 let cwd = if remote.is_none() {
                     group
@@ -539,6 +536,12 @@ impl Controller {
                 } else {
                     cwd
                 };
+                let twin = self.model.workspaces.iter().any(|workspace| {
+                    !workspace.pinned && workspace.group.is_none() && workspace.cwd == cwd
+                });
+                if self.model.row_count() >= self.model.limits.workspaces && !twin {
+                    return Err(Error::WorkspaceLimit);
+                }
                 let id = WorkspaceId::new(self.model.next_workspace);
                 let pane_id = PaneId::new(self.model.next_pane);
                 let next_workspace = self
@@ -611,9 +614,6 @@ impl Controller {
                         pane.remote_cwd.clone(),
                     )
                 };
-                if self.model.workspaces.len() >= self.model.limits.workspaces {
-                    return Err(Error::WorkspaceLimit);
-                }
                 self.check_pane_capacity(0)?;
                 let id = WorkspaceId::new(self.model.next_workspace);
                 let pane_id = PaneId::new(self.model.next_pane);
@@ -2357,6 +2357,25 @@ mod tests {
             ""
         );
     }
+    #[test]
+    fn the_workspace_limit_counts_rows_not_the_tabs_under_them() {
+        let limits = Limits {
+            workspaces: 2,
+            ..Limits::default()
+        };
+        let mut controller = Controller::new(Model::new(limits));
+        let _first = create_in(&mut controller, "one", "/srv/app");
+        create_in(&mut controller, "two", "/srv/app");
+        create_in(&mut controller, "three", "/srv/app");
+        // Three terminals of one folder hold a single row.
+        assert_eq!(controller.model().row_count(), 1);
+        create_in(&mut controller, "four", "/srv/other");
+        assert_eq!(controller.model().row_count(), 2);
+        // More tabs of a folder already listed never reach the limit.
+        create_in(&mut controller, "five", "/srv/app");
+        assert_eq!(controller.model().row_count(), 2);
+    }
+
     #[test]
     fn a_reordered_sidebar_refuses_rows_that_are_unknown_or_repeated() {
         let mut controller = Controller::new(Model::default());
@@ -4236,20 +4255,18 @@ mod tests {
     }
 
     #[test]
-    fn a_clone_beyond_the_workspace_limit_is_refused() {
+    fn a_clone_shares_its_folder_instead_of_reaching_the_limit() {
         let mut controller = Controller::new(Model::new(Limits {
             workspaces: 1,
             ..Default::default()
         }));
         let source = create(&mut controller, "app");
-        let before = controller.model().clone();
-        let generation = controller.generation();
-        assert_eq!(
-            controller.dispatch(Command::CloneWorkspace(source)),
-            Err(Error::WorkspaceLimit)
-        );
-        assert_eq!(controller.model(), &before);
-        assert_eq!(controller.generation(), generation);
+        // The copy is another tab of the source's folder, not another row.
+        controller
+            .dispatch(Command::CloneWorkspace(source))
+            .expect("a tab of the same folder stays within the limit");
+        assert_eq!(controller.model().row_count(), 1);
+        assert_eq!(controller.model().workspaces().len(), 2);
     }
 }
 

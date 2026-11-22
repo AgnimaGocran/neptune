@@ -39,7 +39,7 @@ mod tests {
     fn workspace(controller: &mut Controller, name: &str) -> WorkspaceId {
         controller
             .dispatch(Command::AddWorkspace {
-                cwd: std::env::temp_dir(),
+                cwd: std::env::temp_dir().join("extra"),
                 name: name.into(),
                 group: None,
                 remote: None,
@@ -54,7 +54,7 @@ mod tests {
             .dispatch(Command::AddTab {
                 workspace,
                 pane,
-                cwd: std::env::temp_dir(),
+                cwd: std::env::temp_dir().join("extra"),
             })
             .unwrap();
         controller.model().workspace(workspace).unwrap().active()
@@ -139,7 +139,7 @@ mod tests {
         controller
             .dispatch(Command::SpawnProjectAgent {
                 project,
-                cwd: std::env::temp_dir(),
+                cwd: std::env::temp_dir().join("extra"),
                 worktree: None,
             })
             .unwrap();
@@ -201,7 +201,7 @@ mod tests {
             .dispatch(Command::SpawnAgent {
                 parent,
                 generation: 1,
-                cwd: std::env::temp_dir(),
+                cwd: std::env::temp_dir().join("extra"),
             })
             .unwrap();
         let child = controller.model().spawned(parent).next().unwrap().id();
@@ -499,15 +499,16 @@ mod tests {
         controller
             .dispatch(Command::SetWindowContext(child))
             .unwrap();
-        assert_eq!(
-            controller.dispatch(Command::AddWorkspace {
-                cwd: std::env::temp_dir(),
+        // The limit counts folders, not the tabs listed under each of them.
+        controller
+            .dispatch(Command::AddWorkspace {
+                cwd: std::env::temp_dir().join("extra"),
                 name: "extra".into(),
                 group: None,
-                remote: None
-            }),
-            Err(crate::Error::WorkspaceLimit)
-        );
+                remote: None,
+            })
+            .expect("a second folder fits the limit of one row");
+        assert_eq!(controller.model().row_count(), 1);
     }
 
     #[test]
@@ -565,7 +566,7 @@ mod tests {
                 .copied();
             let window = windows[(seed >> 20) as usize % windows.len()];
             let add = || Command::AddWorkspace {
-                cwd: std::env::temp_dir(),
+                cwd: std::env::temp_dir().join("extra"),
                 name: format!("workspace {step}"),
                 group: None,
                 remote: None,
