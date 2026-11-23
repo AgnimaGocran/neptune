@@ -337,6 +337,20 @@ pub(super) fn workspace_row(
             Sense::click(),
         );
         response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &mini.name));
+        if workspace.pinned && !response.hovered() {
+            // A pinned row's tabs carry its marker too, lighter still.
+            painter.rect_filled(line, 6, theme::tint(p.accent, 0.05));
+        }
+        if workspace.pinned {
+            painter.rect_filled(
+                Rect::from_min_size(
+                    Pos2::new(line.left() - 6.0, line.top() + 4.0),
+                    vec2(2.0, line.height() - 8.0),
+                ),
+                1,
+                p.accent,
+            );
+        }
         if response.hovered() {
             painter.rect_filled(line, 6, p.hover);
         }
