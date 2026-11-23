@@ -71,17 +71,9 @@ pub(super) fn workspace_row(
         );
     }
     if workspace.pinned && lift <= 0.0 {
-        // Pinned rows carry an accent wash and a leading bar, so the block
+        // Pinned rows carry an accent wash, so the block
         // reads apart from the rest of the list at a glance.
         painter.rect_filled(row, metrics::ROW_RADIUS, theme::tint(p.accent, 0.07));
-        painter.rect_filled(
-            Rect::from_min_size(
-                Pos2::new(row.left() + 2.0, row.top() + 8.0),
-                vec2(2.0, row.height() - 16.0),
-            ),
-            1,
-            p.accent,
-        );
     }
     if selected {
         painter.rect_filled(row, metrics::ROW_RADIUS, p.pressed);
@@ -340,16 +332,6 @@ pub(super) fn workspace_row(
         if workspace.pinned && !response.hovered() {
             // A pinned row's tabs carry its marker too, lighter still.
             painter.rect_filled(line, 6, theme::tint(p.accent, 0.05));
-        }
-        if workspace.pinned {
-            painter.rect_filled(
-                Rect::from_min_size(
-                    Pos2::new(line.left() - 6.0, line.top() + 4.0),
-                    vec2(2.0, line.height() - 8.0),
-                ),
-                1,
-                p.accent,
-            );
         }
         if response.hovered() {
             painter.rect_filled(line, 6, p.hover);
