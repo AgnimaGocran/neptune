@@ -71,8 +71,17 @@ pub(super) fn workspace_row(
         );
     }
     if workspace.pinned && lift <= 0.0 {
-        // Pinned rows stand on a slightly darker block of their own.
-        painter.rect_filled(row, metrics::ROW_RADIUS, theme::tint(Color32::BLACK, 0.10));
+        // Pinned rows carry an accent wash and a leading bar, so the block
+        // reads apart from the rest of the list at a glance.
+        painter.rect_filled(row, metrics::ROW_RADIUS, theme::tint(p.accent, 0.12));
+        painter.rect_filled(
+            Rect::from_min_size(
+                Pos2::new(row.left() + 2.0, row.top() + 8.0),
+                vec2(2.0, row.height() - 16.0),
+            ),
+            1,
+            p.accent,
+        );
     }
     if selected {
         painter.rect_filled(row, metrics::ROW_RADIUS, p.pressed);
