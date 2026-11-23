@@ -677,7 +677,9 @@ fn tab(
     let memory_width = memory
         .as_ref()
         .map(|label| {
-            elided(&painter, label, theme::regular(11.0), p.muted, 64.0).size().x
+            elided(&painter, label, theme::regular(11.0), p.muted, 64.0)
+                .size()
+                .x
         })
         .unwrap_or(0.0);
     let title_right = (right - memory_width - 9.0).max(left);
@@ -1303,6 +1305,42 @@ fn draw_pane(
     {
         pane.cache.retry_resize();
         ui.ctx().request_repaint();
+    }
+
+    // A scroll bar at the terminal's trailing edge, when there is history.
+    if pane.cache.history > 0 && card.height() > 80.0 && card.width() > 80.0 {
+        let track = Rect::from_min_max(
+            Pos2::new(card.right() - 10.0, card.top() + 8.0),
+            Pos2::new(card.right() - 4.0, card.bottom() - 8.0),
+        );
+        let visible = pane.cache.visible().max(1) as f32;
+        let total = visible + pane.cache.history as f32;
+        let thumb_height = (track.height() * visible / total).max(24.0);
+        let travel = (track.height() - thumb_height).max(1.0);
+        let progress = pane.cache.display_offset as f32 / pane.cache.history as f32;
+        let thumb = Rect::from_min_size(
+            Pos2::new(track.left(), track.top() + travel * (1.0 - progress)),
+            vec2(track.width(), thumb_height),
+        );
+        painter.rect_filled(track, 3, theme::tint(p.fg, 0.07));
+        let response = ui.interact(
+            track,
+            ui.id().with(("scrollbar", id)),
+            Sense::click_and_drag(),
+        );
+        let ink = if response.dragged() || response.hovered() {
+            p.fg
+        } else {
+            p.muted
+        };
+        painter.rect_filled(thumb, 3, ink);
+        if response.dragged() || response.clicked() {
+            if let Some(pointer) = ui.input(|input| input.pointer.interact_pos()) {
+                let fraction = ((pointer.y - track.top()) / travel).clamp(0.0, 1.0);
+                let offset = ((1.0 - fraction) * pane.cache.history as f32).round() as usize;
+                actions.push(Action::ScrollTo { pane: id, offset });
+            }
+        }
     }
 
     if pane.cache.display_offset > 0 && card.width() > 150.0 && card.height() > 80.0 {

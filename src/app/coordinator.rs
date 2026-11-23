@@ -1092,6 +1092,15 @@ impl App {
                     session.scroll_to_bottom();
                 }
             }
+            Action::ScrollTo { pane, offset } => {
+                if let Some(session) = self.sessions.get(pane) {
+                    let viewport = session.viewport();
+                    let delta = offset as i32 - viewport.display_offset as i32;
+                    if delta != 0 {
+                        session.scroll(delta);
+                    }
+                }
+            }
         }
     }
 

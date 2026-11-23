@@ -21,6 +21,8 @@ pub struct Cache {
     pub columns: u16,
     pub lines: u16,
     pub display_offset: usize,
+    /// Scrollback rows above the screen, for the scroll bar.
+    pub history: usize,
     pub cursor: Option<(usize, usize, CursorShape)>,
     pub mode: TermMode,
     pub cell: Vec2,
@@ -126,6 +128,10 @@ fn resolve(c: Color, p: Palette, bold: bool, colors: &Colors) -> Color32 {
 }
 
 impl Cache {
+    /// The rows the screen shows.
+    pub fn visible(&self) -> usize {
+        self.rows.len()
+    }
     /// Releases retained draw allocations for hidden panes. The next preparation
     /// recreates rows from the owned snapshot without changing terminal state.
     pub fn evict(&mut self) {
@@ -231,6 +237,7 @@ impl Cache {
         self.columns = snapshot.columns as u16;
         self.lines = snapshot.screen_lines as u16;
         self.display_offset = snapshot.display_offset;
+        self.history = snapshot.history;
         self.mode = snapshot.mode;
         self.selection = snapshot.selection;
         self.background = resolve(

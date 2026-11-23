@@ -211,6 +211,8 @@ pub struct ViewportSnapshot {
     pub columns: usize,
     pub screen_lines: usize,
     pub display_offset: usize,
+    /// Scrollback rows above the screen; zero when nothing is scrolled away.
+    pub history: usize,
     pub rows: Vec<Arc<[Cell]>>,
     pub cursor: Cursor,
     pub mode: Mode,
@@ -232,6 +234,7 @@ impl ViewportSnapshot {
             screen_lines,
             display_offset: 0,
             rows: vec![row; screen_lines],
+            history: 0,
             cursor: Cursor::default(),
             mode: Mode::SHOW_CURSOR,
             selection: None,

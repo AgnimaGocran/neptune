@@ -326,6 +326,11 @@ pub enum Action {
         stop: bool,
     },
     ScrollBottom(PaneId),
+    /// Scroll the pane to this history offset (0 = the live screen).
+    ScrollTo {
+        pane: PaneId,
+        offset: usize,
+    },
     OpenNotification(PaneId, u64),
     /// Reveal the terminal an agent runs in, if it is still that terminal.
     OpenAgent(PaneId, u64),

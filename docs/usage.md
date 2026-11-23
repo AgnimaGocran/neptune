@@ -31,6 +31,8 @@ New workspace opens and selects a fresh shell at `~` immediately. Rename it late
 
 The directory beneath a local workspace's name follows its focused terminal. Switching between tabs or split panes updates that directory; inactive workspaces show their last focused terminal's directory. Long paths are shortened to fit the sidebar. SSH workspaces show their host there. When that directory is inside a Git repository, its branch follows the path (or the short name of the commit, when no branch is checked out), with a dot while the repository has changes that are not committed. The branch is read again every five seconds while the sidebar is in view, less often while another window is the active one, and not at all while Neptune is minimized.
 
+A terminal that has scrollback shows a scroll bar along its trailing edge: drag its handle or click the track to move through history, and **Back to bottom** returns to the live screen. The bar appears only while there is history to scroll.
+
 ## Multiple windows
 
 Drag a workspace row out of the sidebar to open it in another native Neptune
