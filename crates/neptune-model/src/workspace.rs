@@ -1490,7 +1490,26 @@ impl Model {
                 self.next_folder += 1;
             }
         }
-        // Compact tabs under the first workspace of a folder are off.
+        // A later workspace in the same directory joins the first one as one of
+        // its compact tabs and leaves the top-level rows; folders keep their own
+        // grouping untouched.
+        self.minis.clear();
+        let mut first_of: Vec<(std::path::PathBuf, WorkspaceId)> = Vec::new();
+        for workspace in &self.workspaces {
+            if workspace.pinned
+                || workspace.group.is_some()
+                || self
+                    .folders
+                    .iter()
+                    .any(|folder| folder.path == workspace.cwd && folder.grouped)
+            {
+                continue;
+            }
+            match first_of.iter().find(|(cwd, _)| *cwd == workspace.cwd) {
+                Some((_, parent)) => self.minis.push((workspace.id, *parent)),
+                None => first_of.push((workspace.cwd.clone(), workspace.id)),
+            }
+        }
         // The row each workspace belongs to: its group, its folder, or itself.
         let entries: Vec<(WorkspaceId, SidebarItem)> = self
             .workspaces

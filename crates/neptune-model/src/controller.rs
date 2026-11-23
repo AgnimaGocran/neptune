@@ -2278,10 +2278,21 @@ mod tests {
                 grouped: false,
             })
             .unwrap();
-        assert_eq!(
-            controller.model().sidebar_order(),
-            [SidebarItem::Workspace(one), SidebarItem::Workspace(two)]
-        );
+        // A folder's terminals share one row: the rest are its compact tabs,
+        // so two top-level rows never show the same folder.
+        let rows: Vec<WorkspaceId> = controller
+            .model()
+            .sidebar_order()
+            .iter()
+            .filter_map(|item| match item {
+                SidebarItem::Workspace(id) => Some(*id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(rows.len(), 1, "one row for the folder's terminals");
+        let parent = rows[0];
+        let child = if parent == one { two } else { one };
+        assert_eq!(controller.model().mini_parent(child), Some(parent));
         assert!(!controller.model().folder(folder).unwrap().grouped());
         // The choice is saved, and grouping again restores the row.
         assert!(!controller.model().folder_specs()[0].grouped);
