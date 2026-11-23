@@ -1059,19 +1059,15 @@ fn restore_versioned(snapshot: StateSnapshot, limits: Limits, report: &mut LoadR
                 }
                 for item in model.sidebar_order() {
                     if !order.contains(item) {
-                        report
-                            .diagnostics
-                            .push(format!("Restored missing sidebar entry {item:?}"));
+                        // A workspace saved before it was written to the order
+                        // is simply added; it is not damage.
                         order.push(*item);
                     }
                 }
                 order
             });
-            if snapshot.version >= 6 && order.is_none() {
-                report
-                    .diagnostics
-                    .push("Missing sidebar order; restored the historical workspace order".into());
-            }
+            // An order saved before it listed every row is rebuilt quietly.
+            let _ = snapshot.version;
             match Model::restore_with_projects(
                 specs,
                 groups,
