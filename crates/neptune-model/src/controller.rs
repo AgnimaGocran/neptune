@@ -2278,13 +2278,10 @@ mod tests {
                 grouped: false,
             })
             .unwrap();
-        let row = match controller.model().sidebar_order() {
-            [SidebarItem::Workspace(id)] => *id,
-            other => panic!("expected one row, found {other:?}"),
-        };
-        // The second terminal of that folder is listed under the first.
-        let (parent, child) = if row == one { (one, two) } else { (two, one) };
-        assert_eq!(controller.model().mini_parent(child), Some(parent));
+        assert_eq!(
+            controller.model().sidebar_order(),
+            [SidebarItem::Workspace(one), SidebarItem::Workspace(two)]
+        );
         assert!(!controller.model().folder(folder).unwrap().grouped());
         // The choice is saved, and grouping again restores the row.
         assert!(!controller.model().folder_specs()[0].grouped);
