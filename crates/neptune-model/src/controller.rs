@@ -836,6 +836,9 @@ impl Controller {
                 {
                     self.model.workspace_mut(workspace)?.pinned = pinned;
                     self.model.order_workspaces();
+                    if !pinned {
+                        self.model.unpin_row_place(workspace);
+                    }
                     dirty = true;
                 }
             }
@@ -2386,6 +2389,26 @@ mod tests {
 
     #[test]
     #[test]
+    #[test]
+    fn unpinning_returns_a_tab_to_the_plain_list() {
+        let mut controller = Controller::new(Model::default());
+        let app = create_in(&mut controller, "app", "/srv/app");
+        controller
+            .dispatch(Command::SetWorkspacePinned {
+                workspace: app,
+                pinned: true,
+            })
+            .unwrap();
+        assert!(controller.model().workspace(app).unwrap().pinned());
+        controller
+            .dispatch(Command::SetWorkspacePinned {
+                workspace: app,
+                pinned: false,
+            })
+            .unwrap();
+        assert!(!controller.model().workspace(app).unwrap().pinned());
+    }
+
     fn a_pinned_tab_holds_every_other_tab_of_its_folder() {
         let mut controller = Controller::new(Model::default());
         let pinned = create_in(&mut controller, "pinned", "/srv/app");

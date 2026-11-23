@@ -725,6 +725,23 @@ impl Model {
             })
             .count()
     }
+    /// Puts a row that just left the pinned block right after the rows still
+    /// pinned, so it visibly returns to the plain list.
+    pub(crate) fn unpin_row_place(&mut self, workspace: WorkspaceId) {
+        let item = SidebarItem::Workspace(workspace);
+        if let Some(at) = self.sidebar_order.iter().position(|entry| *entry == item) {
+            self.sidebar_order.remove(at);
+        }
+        let pinned_end = self
+            .sidebar_order
+            .iter()
+            .position(|entry| match entry {
+                SidebarItem::Workspace(id) => !self.workspace(*id).is_some_and(Workspace::pinned),
+                _ => true,
+            })
+            .unwrap_or(self.sidebar_order.len());
+        self.sidebar_order.insert(pinned_end, item);
+    }
     /// The workspace whose compact tabs hold this one, if any.
     pub fn mini_parent(&self, workspace: WorkspaceId) -> Option<WorkspaceId> {
         self.minis
