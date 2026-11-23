@@ -52,6 +52,8 @@ struct Fixture {
     pinned: Vec<u64>,
     /// The folder branch each row stands under.
     folder_membership: Vec<(u64, FolderId)>,
+    /// The tabs listed under a workspace: parent id, then their ids.
+    minis: Vec<(u64, Vec<u64>)>,
     /// The folder rows the sidebar shows.
     folder_views: Vec<FolderView>,
     sidebar_order: Vec<SidebarItem>,
@@ -79,6 +81,7 @@ impl Fixture {
             membership: Vec::new(),
             pinned: Vec::new(),
             folder_membership: Vec::new(),
+            minis: Vec::new(),
             folder_views: Vec::new(),
             sidebar_order: order
                 .iter()
@@ -107,6 +110,26 @@ impl Fixture {
                 .iter()
                 .find(|(id, _)| *id == workspace.id.get())
                 .map(|(_, folder)| *folder);
+        }
+        let names: Vec<(u64, WorkspaceId, String)> = views
+            .iter()
+            .map(|workspace| (workspace.id.get(), workspace.id, workspace.name.clone()))
+            .collect();
+        for workspace in &mut views {
+            if let Some((_, kids)) = self.minis.iter().find(|(id, _)| *id == workspace.id.get()) {
+                workspace.minis = kids
+                    .iter()
+                    .filter_map(|kid| {
+                        names
+                            .iter()
+                            .find(|(id, _, _)| id == kid)
+                            .map(|(_, id, name)| crate::ui::MiniTab {
+                                workspace: *id,
+                                name: name.clone(),
+                            })
+                    })
+                    .collect();
+            }
         }
         let view = ChromeView {
             keybindings: &Default::default(),
@@ -1124,5 +1147,41 @@ fn pinned_rows_stand_under_a_heading_that_sorts_them_apart() {
             }]
         ),
         "the heading did not offer its own sort"
+    );
+}
+
+#[test]
+fn a_click_on_a_mini_row_selects_only_that_tab() {
+    let mut fixture = Fixture::new(&[1, 2]);
+    fixture.minis.push((1, vec![2]));
+    fixture.sidebar_order = vec![SidebarItem::Workspace(WorkspaceId::new(1))];
+    fixture.frame(vec![]);
+    fixture.actions.clear();
+    let mini = Pos2::new(
+        100.0,
+        row(0).y + ROW_HEIGHT * 0.5 + 2.0 + COMMAND_HEIGHT * 0.5,
+    );
+    fixture.frame(vec![button(mini, true)]);
+    fixture.frame(vec![button(mini, false)]);
+    assert!(
+        fixture
+            .actions
+            .iter()
+            .any(|action| matches!(action, Action::SelectWorkspace(id) if id.get() == 2)),
+        "the clicked tab is selected"
+    );
+    assert!(
+        !fixture
+            .actions
+            .iter()
+            .any(|action| matches!(action, Action::SelectWorkspace(id) if id.get() == 1)),
+        "the parent is not selected instead"
+    );
+    assert!(
+        !fixture.actions.iter().any(|action| matches!(
+            action,
+            Action::MoveWorkspace(..) | Action::MoveSidebarItem(..)
+        )),
+        "a click moves nothing"
     );
 }
