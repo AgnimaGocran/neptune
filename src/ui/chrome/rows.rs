@@ -73,7 +73,7 @@ pub(super) fn workspace_row(
     if workspace.pinned && lift <= 0.0 {
         // Pinned rows carry an accent wash and a leading bar, so the block
         // reads apart from the rest of the list at a glance.
-        painter.rect_filled(row, metrics::ROW_RADIUS, theme::tint(p.accent, 0.12));
+        painter.rect_filled(row, metrics::ROW_RADIUS, theme::tint(p.accent, 0.07));
         painter.rect_filled(
             Rect::from_min_size(
                 Pos2::new(row.left() + 2.0, row.top() + 8.0),

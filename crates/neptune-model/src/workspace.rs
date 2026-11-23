@@ -719,6 +719,7 @@ impl Model {
         let mut seen = std::collections::HashSet::new();
         self.workspaces
             .iter()
+            .filter(|workspace| !self.minis.iter().any(|(child, _)| *child == workspace.id))
             .filter(|workspace| {
                 workspace.pinned || workspace.group.is_some() || seen.insert(workspace.cwd.clone())
             })
@@ -1500,28 +1501,32 @@ impl Model {
             .filter(|folder| folder.grouped)
             .map(|folder| folder.path.clone())
             .collect();
-        // A pinned tab anchors its folder: every other tab of that folder is
-        // listed under it, so a pinned folder never stands twice.
-        let mut first_of: Vec<(std::path::PathBuf, WorkspaceId)> = self
+        // The first tab of a folder holds its row, pinned tabs first: every
+        // other tab of that folder is listed under it, so no folder stands
+        // twice and a pinned folder keeps its place.
+        let listed: Vec<(std::path::PathBuf, WorkspaceId, bool, bool)> = self
             .workspaces
             .iter()
-            .filter(|workspace| {
-                workspace.pinned
-                    && workspace.group.is_none()
-                    && !grouped_paths.contains(&workspace.cwd)
+            .map(|workspace| {
+                (
+                    workspace.cwd.clone(),
+                    workspace.id,
+                    workspace.pinned,
+                    workspace.group.is_some() || grouped_paths.contains(&workspace.cwd),
+                )
             })
-            .map(|workspace| (workspace.cwd.clone(), workspace.id))
             .collect();
-        for workspace in &self.workspaces {
-            if workspace.pinned
-                || workspace.group.is_some()
-                || grouped_paths.contains(&workspace.cwd)
-            {
-                continue;
-            }
-            match first_of.iter().find(|(cwd, _)| *cwd == workspace.cwd) {
-                Some((_, parent)) => self.minis.push((workspace.id, *parent)),
-                None => first_of.push((workspace.cwd.clone(), workspace.id)),
+        self.minis.clear();
+        let mut first_of: Vec<(std::path::PathBuf, WorkspaceId)> = Vec::new();
+        for pinned in [true, false] {
+            for (cwd, id, is_pinned, held) in &listed {
+                if *held || *is_pinned != pinned {
+                    continue;
+                }
+                match first_of.iter().find(|(path, _)| path == cwd) {
+                    Some((_, parent)) => self.minis.push((*id, *parent)),
+                    None => first_of.push((cwd.clone(), *id)),
+                }
             }
         }
         // The row each workspace belongs to: its group, its folder, or itself.

@@ -2410,6 +2410,12 @@ mod tests {
                 .unwrap();
         }
         let other = create_in(&mut controller, "other", "/srv/app");
+        controller
+            .dispatch(Command::SetWorkspacePinned {
+                workspace: other,
+                pinned: true,
+            })
+            .unwrap();
         assert_eq!(controller.model().mini_parent(other), Some(pinned));
         let rows: Vec<_> = controller.model().sidebar_order().to_vec();
         assert!(rows.contains(&SidebarItem::Workspace(pinned)));
@@ -2418,6 +2424,7 @@ mod tests {
             "the second tab of a pinned folder holds no row of its own"
         );
     }
+    #[test]
 
     fn a_reordered_sidebar_refuses_rows_that_are_unknown_or_repeated() {
         let mut controller = Controller::new(Model::default());
