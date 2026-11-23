@@ -329,7 +329,11 @@ pub(super) fn workspace_row(
             Sense::click(),
         );
         response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &mini.name));
-        if workspace.pinned && !response.hovered() {
+        let selected = Some(mini.workspace) == view.active;
+        if selected {
+            // The tab in view carries the same fill as a selected row.
+            painter.rect_filled(line, 6, p.pressed);
+        } else if workspace.pinned && !response.hovered() {
             // A pinned row's tabs carry its marker too, lighter still.
             painter.rect_filled(line, 6, theme::tint(p.accent, 0.05));
         }
@@ -352,7 +356,7 @@ pub(super) fn workspace_row(
                 &painter,
                 &mini.name,
                 theme::regular(11.5),
-                if response.hovered() {
+                if selected || response.hovered() {
                     p.fg
                 } else {
                     p.secondary
