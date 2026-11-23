@@ -1494,14 +1494,28 @@ impl Model {
         // its compact tabs and leaves the top-level rows; folders keep their own
         // grouping untouched.
         self.minis.clear();
-        let mut first_of: Vec<(std::path::PathBuf, WorkspaceId)> = Vec::new();
+        let grouped_paths: Vec<std::path::PathBuf> = self
+            .folders
+            .iter()
+            .filter(|folder| folder.grouped)
+            .map(|folder| folder.path.clone())
+            .collect();
+        // A pinned tab anchors its folder: every other tab of that folder is
+        // listed under it, so a pinned folder never stands twice.
+        let mut first_of: Vec<(std::path::PathBuf, WorkspaceId)> = self
+            .workspaces
+            .iter()
+            .filter(|workspace| {
+                workspace.pinned
+                    && workspace.group.is_none()
+                    && !grouped_paths.contains(&workspace.cwd)
+            })
+            .map(|workspace| (workspace.cwd.clone(), workspace.id))
+            .collect();
         for workspace in &self.workspaces {
             if workspace.pinned
                 || workspace.group.is_some()
-                || self
-                    .folders
-                    .iter()
-                    .any(|folder| folder.path == workspace.cwd && folder.grouped)
+                || grouped_paths.contains(&workspace.cwd)
             {
                 continue;
             }

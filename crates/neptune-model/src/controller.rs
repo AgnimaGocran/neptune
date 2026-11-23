@@ -2385,6 +2385,40 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn a_pinned_tab_holds_every_other_tab_of_its_folder() {
+        let mut controller = Controller::new(Model::default());
+        let pinned = create_in(&mut controller, "pinned", "/srv/app");
+        controller
+            .dispatch(Command::SetWorkspacePinned {
+                workspace: pinned,
+                pinned: true,
+            })
+            .unwrap();
+        if let Some(folder) = controller
+            .model()
+            .folders()
+            .iter()
+            .find(|folder| folder.path() == std::path::Path::new("/srv/app"))
+            .map(crate::Folder::id)
+        {
+            controller
+                .dispatch(Command::SetFolderGrouped {
+                    folder,
+                    grouped: false,
+                })
+                .unwrap();
+        }
+        let other = create_in(&mut controller, "other", "/srv/app");
+        assert_eq!(controller.model().mini_parent(other), Some(pinned));
+        let rows: Vec<_> = controller.model().sidebar_order().to_vec();
+        assert!(rows.contains(&SidebarItem::Workspace(pinned)));
+        assert!(
+            !rows.contains(&SidebarItem::Workspace(other)),
+            "the second tab of a pinned folder holds no row of its own"
+        );
+    }
+
     fn a_reordered_sidebar_refuses_rows_that_are_unknown_or_repeated() {
         let mut controller = Controller::new(Model::default());
         let first = create_in(&mut controller, "one", "/one");
