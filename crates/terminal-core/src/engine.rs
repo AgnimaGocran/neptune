@@ -153,7 +153,7 @@ impl TerminalSession {
                 .collect();
         }
         let content = terminal.renderable_content();
-        let history = self.history_size();
+        let history = terminal.history_size();
         let snapshot = view::ViewportSnapshot {
             revision,
             columns,
